@@ -1,0 +1,21 @@
+version: "3.8"
+
+services:
+  mysql:        
+    image: mysql:8
+    container_name: mysql-api-test
+
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: testing_system
+      TZ: Asia/Ho_Chi_Minh
+
+    ports:
+      - "3306:3306"
+
+    volumes:
+      - db_data:/var/lib/mysql
+    
+
+volumes:
+  db_data:
