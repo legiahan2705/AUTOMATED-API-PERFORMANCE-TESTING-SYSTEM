@@ -43,9 +43,12 @@ export class QuickPerformanceTestService {
     const summaryPath = `uploads/summaries/performance-quick/testrun_${testRunId}_summary.json`;
 
     // ensure dirs
-    if (!fs.existsSync(path.dirname(inputPath))) fs.mkdirSync(path.dirname(inputPath), { recursive: true });
-    if (!fs.existsSync(path.dirname(resultPath))) fs.mkdirSync(path.dirname(resultPath), { recursive: true });
-    if (!fs.existsSync(path.dirname(summaryPath))) fs.mkdirSync(path.dirname(summaryPath), { recursive: true });
+    if (!fs.existsSync(path.dirname(inputPath)))
+      fs.mkdirSync(path.dirname(inputPath), { recursive: true });
+    if (!fs.existsSync(path.dirname(resultPath)))
+      fs.mkdirSync(path.dirname(resultPath), { recursive: true });
+    if (!fs.existsSync(path.dirname(summaryPath)))
+      fs.mkdirSync(path.dirname(summaryPath), { recursive: true });
 
     // 1️. Tạo script & ghi file
     fs.writeFileSync(
@@ -180,14 +183,14 @@ export class QuickPerformanceTestService {
       {
         name: 'http_req_duration_p90',
         desc: 'HTTP Req Duration P90',
-        val: get(m['http_req_duration'], 'percentiles["90"]'),
+        val: get(m['http_req_duration'], 'p(90)'), 
         unit: 'ms',
         cat: 'Performance',
       },
       {
         name: 'http_req_duration_p95',
         desc: 'HTTP Req Duration P95',
-        val: get(m['http_req_duration'], 'percentiles["95"]'),
+        val: get(m['http_req_duration'], 'p(95)'), 
         unit: 'ms',
         cat: 'Performance',
       },

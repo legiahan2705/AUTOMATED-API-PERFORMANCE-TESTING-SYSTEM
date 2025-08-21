@@ -1,33 +1,33 @@
-'use client'
+"use client";
 
-import { AppSidebar } from "@/components/app-sidebar"
-import { SectionCards } from "@/components/section-cards"
-import { SiteHeader } from "@/components/site-header"
-import { ProjectTable } from "@/components/project-table"
+import { AppSidebar } from "@/components/app-sidebar";
+import { SectionCards } from "@/components/section-cards";
+import { SiteHeader } from "@/components/site-header";
+import { ProjectTable } from "@/components/project-table";
+import ScheduledTestsTable, {
+  ScheduledTest,
+} from "@/components/ScheduledTestsTable";
 
-import { useState, useRef } from "react"
+import { useState, useRef } from "react";
 
-import {
-  SidebarInset,
-  SidebarProvider,
-} from "@/components/ui/sidebar"
+import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 
 export default function Page() {
-  const [refreshTrigger, setRefreshTrigger] = useState(0) // dùng để trigger reload dữ liệu project
-  const [highlightProjectSection, setHighlightProjectSection] = useState(false) // dùng để highlight khối Your projects
-  const yourProjectsRef = useRef<HTMLDivElement>(null) // ref để cuộn tới khối Your projects
+  const [refreshTrigger, setRefreshTrigger] = useState(0); // dùng để trigger reload dữ liệu project
+  const [highlightProjectSection, setHighlightProjectSection] = useState(false); // dùng để highlight khối Your projects
+  const yourProjectsRef = useRef<HTMLDivElement>(null); // ref để cuộn tới khối Your projects
 
   // Hàm xử lý cuộn xuống phần "Your projects" và highlight nó
   const scrollToProjects = () => {
-    yourProjectsRef.current?.scrollIntoView({ behavior: "smooth" })
-    setHighlightProjectSection(true)
-    setTimeout(() => setHighlightProjectSection(false), 1500) // highlight trong 1.5s
-  }
+    yourProjectsRef.current?.scrollIntoView({ behavior: "smooth" });
+    setHighlightProjectSection(true);
+    setTimeout(() => setHighlightProjectSection(false), 1500); // highlight trong 1.5s
+  };
 
   // Hàm này dùng để cập nhật trigger khi có thao tác tạo hoặc xoá project
   const handleReloadProjects = () => {
-    setRefreshTrigger(prev => prev + 1)
-  }
+    setRefreshTrigger((prev) => prev + 1);
+  };
 
   return (
     <SidebarProvider
@@ -82,14 +82,13 @@ export default function Page() {
                 </div>
               </div>
 
-              {/* Khối thứ ba (tạm để trống) */}
-              <div className="space-y-3 px-4 lg:px-6 h-[800px] bg-white rounded-lg shadow-[0_2px_10px_#658ec7]">
-                {/* nội dung khối 3 */}
+              <div className=" ml-6 mr-6  bg-[white] rounded-lg transition-shadow duration-500 shadow-[0_2px_10px_#658ec7] border-0">
+                <ScheduledTestsTable/>
               </div>
             </div>
           </div>
         </div>
       </SidebarInset>
     </SidebarProvider>
-  )
+  );
 }

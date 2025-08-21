@@ -55,7 +55,7 @@ export class PerfScriptResultDetail {
   fails: number;
 
   @CreateDateColumn()
-created_at: Date;
+  created_at: Date;
     
     @Column('json', { nullable: true })
     raw_values: Record<string, any>;

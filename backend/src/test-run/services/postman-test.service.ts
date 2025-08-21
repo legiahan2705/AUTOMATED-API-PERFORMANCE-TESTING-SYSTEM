@@ -24,106 +24,47 @@ export class PostmanTestService {
     private projectRepo: Repository<Project>,
   ) {}
 
-  /**
-   * Chạy test Postman sử dụng Newman CLI
-   * - Sao chép file Postman collection sang thư mục test_inputs
-   * - Chạy Newman với reporter JSON, lưu kết quả raw
-   * - Lấy log response time dạng JSON line từ stdout (nếu có)
-   * - Lọc và ghi log time series vào file riêng
-   * - Phân tích kết quả, lưu summary, lưu chi tiết assertions vào DB
-   * - Lưu test run và cập nhật trường time_series_path
-   * @param projectId ID project chứa file Postman collection
-   * @returns test_run_id và summary kết quả test
-   */
   async runPostmanTest(projectId: number) {
-    // Lấy project và kiểm tra file Postman collection
     const project = await this.projectRepo.findOne({
       where: { id: projectId },
     });
     if (!project?.postmanFilePath)
       throw new NotFoundException('Project không có file Postman.');
 
-    // Tạo tên và đường dẫn file input test dựa vào timestamp
     const testRunId = Date.now();
     const inputFileName = `testrun_${testRunId}.json`;
     const inputPath = path.join('uploads/test_inputs/postman', inputFileName);
 
-    // Sao chép file Postman collection gốc vào thư mục test_inputs
     fs.copyFileSync(project.postmanFilePath, inputPath);
 
-    // Đường dẫn lưu file kết quả raw, summary và time series log
     const rawResultPath = `uploads/results/api/testrun_${testRunId}_result.json`;
     const summaryPath = `uploads/summaries/api/testrun_${testRunId}_summary.json`;
     const timeSeriesDir = 'uploads/time_series/postman';
     if (!fs.existsSync(timeSeriesDir)) fs.mkdirSync(timeSeriesDir, { recursive: true });
     const timeSeriesPath = path.join(timeSeriesDir, `test_${testRunId}_time_series.json`);
 
-    // Lệnh chạy Newman với reporter JSON export
     const cmd = `npx newman run ${inputPath} -r json --reporter-json-export ${rawResultPath}`;
+    await execAsync(cmd);
 
-    // Thực thi lệnh và lấy stdout để parse log time series
-    const { stdout } = await execAsync(cmd);
-
-    // Phân tích stdout, lọc các dòng JSON có timestamp, duration, status (log response time)
-    const timeSeriesLines = stdout.split('\n').filter((line) => {
-      try {
-        const obj = JSON.parse(line);
-        return (
-          obj.timestamp &&
-          obj.duration !== undefined &&
-          obj.status !== undefined
-        );
-      } catch {
-        return false;
-      }
-    });
-
-    // Nếu có log hợp lệ, ghi ra file time series
-    if (timeSeriesLines.length > 0) {
-      // Parse kỹ lại, chỉ giữ object hợp lệ
-      const parsedLines = timeSeriesLines
-        .map((line) => {
-          try {
-            const obj = JSON.parse(line);
-            return obj &&
-              obj.timestamp &&
-              obj.duration !== undefined &&
-              obj.status !== undefined
-              ? obj
-              : null;
-          } catch {
-            return null;
-          }
-        })
-        .filter(Boolean);
-
-      if (parsedLines.length > 0) {
-        fs.writeFileSync(
-          timeSeriesPath,
-          parsedLines.map((obj) => JSON.stringify(obj)).join('\n'),
-        );
-        console.log('Log response time đã được ghi tại:', timeSeriesPath);
-      } else {
-        console.warn('Không tìm thấy log response time hợp lệ.');
-      }
-    } else {
-      console.warn('Không tìm thấy log response time trong stdout.');
-    }
-
-    // Đọc file kết quả raw Newman export
+    // 📊 Lấy time series từ raw Newman
     const rawData = JSON.parse(fs.readFileSync(rawResultPath, 'utf-8'));
+    const timeSeries = (rawData.run?.executions || []).map(e => ({
+      timestamp: new Date().toISOString(),
+      duration: e.response?.responseTime || 0,
+      status: e.response?.code || null,
+      name: e.item?.name || '',
+      url: e.request?.url?.raw || '',
+    }));
+    fs.writeFileSync(timeSeriesPath, JSON.stringify(timeSeries, null, 2));
 
-    // Phân tích kết quả raw thành summary & chi tiết assertions
+    console.log('Time series đã được ghi tại:', timeSeriesPath);
+
     const { summary, details } = this.analyzeResult(rawData);
-
-    // Gán tên file gốc nếu có
     summary.original_file_name =
       project.originalPostmanFileName || path.basename(project.postmanFilePath);
 
-    // Ghi summary ra file JSON
     fs.writeFileSync(summaryPath, JSON.stringify(summary, null, 2));
 
-    // Tạo bản ghi test run mới, kèm luôn trường time_series_path
     const testRun = this.testRunRepo.create({
       project_id: projectId,
       category: 'api',
@@ -131,13 +72,12 @@ export class PostmanTestService {
       input_file_path: inputPath,
       raw_result_path: rawResultPath,
       summary_path: summaryPath,
-      time_series_path: timeSeriesPath, // Cập nhật đường dẫn log thời gian phản hồi
+      time_series_path: timeSeriesPath,
       config_json: { fileName: inputFileName },
       original_file_name: summary.original_file_name,
     });
     const savedTestRun = await this.testRunRepo.save(testRun);
 
-    // Tạo entities chi tiết assertions từ data phân tích
     const entities = details.map((d) =>
       this.detailRepo.create({
         ...d,
@@ -152,19 +92,11 @@ export class PostmanTestService {
     };
   }
 
-  /**
-   * Phân tích kết quả raw Newman export thành summary tổng quan và chi tiết assertions
-   * @param raw Dữ liệu raw JSON xuất từ Newman
-   * @returns object chứa summary và details
-   */
   private analyzeResult(raw: any) {
-    // Thống kê tổng số requests, assertions, failures
     const totalRequests = raw.run?.stats?.requests?.total || 0;
     const totalAssertions = raw.run?.stats?.assertions?.total || 0;
     const totalFailures = raw.run?.failures?.length || 0;
 
-    // Tính duration test: nếu có thời gian bắt đầu và kết thúc thì tính khoảng đó,
-    // còn không thì cộng responseTime từng request
     const durationMs =
       raw.run?.timings?.completed && raw.run?.timings?.started
         ? raw.run.timings.completed - raw.run.timings.started
@@ -173,7 +105,6 @@ export class PostmanTestService {
             0,
           );
 
-    // Hàm dựng URL đầy đủ từ object URL Newman trả về
     const buildUrl = (urlObj: any) => {
       if (urlObj?.raw) return urlObj.raw;
       const host = urlObj?.host?.join('.') || '';
@@ -181,7 +112,6 @@ export class PostmanTestService {
       return `${host}/${path}`.replace(/\/$/, '');
     };
 
-    // Tổng hợp summary toàn bộ kết quả
     const summary = {
       collection_name: raw.collection?.info?.name || 'Unnamed Collection',
       total_requests: totalRequests,
@@ -202,10 +132,9 @@ export class PostmanTestService {
         })),
         is_passed: (e.assertions || []).every((a: any) => !a.error),
       })),
-      original_file_name: '', // sẽ set bên ngoài
+      original_file_name: '',
     };
 
-    // Chi tiết từng execution assertions, kết quả test
     const details = (raw.run?.executions || []).map((exec: any) => ({
       method: exec.request?.method || '',
       endpoint: exec.item?.name || buildUrl(exec.request?.url),

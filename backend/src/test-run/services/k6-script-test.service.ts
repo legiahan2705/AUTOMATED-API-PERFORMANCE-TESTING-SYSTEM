@@ -72,11 +72,15 @@ export class K6ScriptTestService {
     // Đường dẫn lưu log thời gian (time series) - log JSON lines
     const timeSeriesPath = `uploads/time_series/performance-k6/test_${testRunId}_time_series.json`;
 
-    // Thực thi lệnh k6 run với biến môi trường LOG_PATH truyền vào để script ghi log time series
+    // Thực thi lệnh k6 run và redirect stdout ra file log time series
+    // và --console-output để ghi log JSON trực tiếp ra file
     try {
-      await execAsync(`k6 run ${inputPath} --summary-export=${rawResultPath}`, {
-        env: { ...process.env, LOG_PATH: timeSeriesPath },
-      });
+      await execAsync(
+        `k6 run ${inputPath} --summary-export=${rawResultPath} --out json=${timeSeriesPath}`,
+        {
+          env: { ...process.env, LOG_PATH: timeSeriesPath },
+        },
+      );
     } catch (err: any) {
       console.error('Lỗi khi chạy k6:', err);
       throw err;
@@ -91,7 +95,8 @@ export class K6ScriptTestService {
     // Phân tích dữ liệu raw thành summary có cấu trúc dễ dùng
     const summary = this.analyzeResult(rawData);
     summary.original_file_name =
-      project.originalK6ScriptFileName || path.basename(project.k6ScriptFilePath);
+      project.originalK6ScriptFileName ||
+      path.basename(project.k6ScriptFilePath);
 
     // Ghi summary ra file JSON
     fs.writeFileSync(summaryPath, JSON.stringify(summary, null, 2));
@@ -159,7 +164,6 @@ export class K6ScriptTestService {
     // Xử lý file log time series nếu tồn tại
     if (fs.existsSync(timeSeriesPath)) {
       try {
-        // Đọc toàn bộ file time series
         const lines = fs
           .readFileSync(timeSeriesPath, 'utf-8')
           .split('\n')
@@ -169,18 +173,24 @@ export class K6ScriptTestService {
             try {
               return JSON.parse(l);
             } catch {
-              return null; // Bỏ qua dòng không phải JSON hợp lệ
+              return null;
             }
           })
           .filter(
             (obj) =>
               obj &&
-              obj.timestamp &&
-              obj.duration !== undefined &&
-              obj.status !== undefined,
-          );
+              obj.type === 'Point' &&
+              obj.metric === 'http_req_duration' &&
+              obj.data?.time &&
+              obj.data?.value !== undefined &&
+              obj.data?.tags?.status !== undefined,
+          )
+          .map((obj) => ({
+            timestamp: obj.data.time,
+            duration: obj.data.value,
+            status: obj.data.tags.status,
+          }));
 
-        // Nếu có dữ liệu hợp lệ, ghi lại file sạch
         if (lines.length > 0) {
           fs.writeFileSync(
             timeSeriesPath,

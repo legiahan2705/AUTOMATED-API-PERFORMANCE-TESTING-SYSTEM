@@ -98,23 +98,34 @@ export class TestRunController {
 
   // Lấy dữ liệu time series để vẽ biểu đồ
   @Get(':id/time-series')
-  async getTimeSeriesData(@Param('id') id: number, @Res() res: Response) {
-    try {
-      const filePath = await this.testRunService.getTimeSeriesPath(id);
-      if (!filePath || !fs.existsSync(filePath)) {
-        return res.status(200).json([]);
-      }
-
-      const raw = fs.readFileSync(filePath, 'utf-8');
-      const jsonLines = raw
-        .split('\n')
-        .filter(line => line.trim().length > 0)
-        .map(line => JSON.parse(line));
-
-      return res.json(jsonLines);
-    } catch (err) {
-      console.error(`Error đọc file time-series của test run ${id}:`, err);
+async getTimeSeriesData(@Param('id') id: number, @Res() res: Response) {
+  try {
+    const filePath = await this.testRunService.getTimeSeriesPath(id);
+    if (!filePath || !fs.existsSync(filePath)) {
       return res.status(200).json([]);
     }
+
+    const raw = fs.readFileSync(filePath, 'utf-8').trim();
+    if (!raw) return res.status(200).json([]);
+
+    const jsonLines = raw
+      .split('\n')
+      .filter(line => line.trim().length > 0)
+      .map(line => {
+        try {
+          return JSON.parse(line);
+        } catch (err) {
+          console.error(`Invalid JSON line in time-series file ${filePath}:`, line);
+          return null;
+        }
+      })
+      .filter(line => line !== null); // bỏ line lỗi
+
+    return res.json(jsonLines);
+  } catch (err) {
+    console.error(`Error đọc file time-series của test run ${id}:`, err);
+    return res.status(200).json([]);
   }
+}
+
 }

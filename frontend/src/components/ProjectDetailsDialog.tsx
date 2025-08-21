@@ -6,9 +6,6 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { fetchProjectById } from "@/lib/api";
 
-
-
-
 import {
   Pencil,
   FileText,
@@ -216,7 +213,6 @@ const ProjectDetailsDialog: React.FC<ProjectDetailsDialogProps> = ({
       toast.success("Đã chạy kiểm thử thành công!");
       setRefreshTrigger((v) => v + 1);
       console.log("Summary:", res.data.summary);
-      
     } catch (err) {
       console.error(err);
       toast.error("Kiểm thử thất bại ");
@@ -231,7 +227,6 @@ const ProjectDetailsDialog: React.FC<ProjectDetailsDialogProps> = ({
       setIsRunningQuick(true);
       const res = await api.post(`/test-run/performance/quick/${project.id}`);
       setIsRunningQuick(false);
-
 
       toast.success("Đã chạy kiểm thử hiệu năng thành công!");
       setRefreshTrigger((v) => v + 1);
@@ -290,7 +285,6 @@ const ProjectDetailsDialog: React.FC<ProjectDetailsDialogProps> = ({
           <FileText className="w-6 h-6 text-primary" />
           <h2 className="text-[30px] font-bold">Project Details</h2>
         </div>
-
 
         {/* Project Information */}
         <div className="border rounded-xl p-5 space-y-5 bg-[#f8fafc]">
@@ -407,7 +401,6 @@ const ProjectDetailsDialog: React.FC<ProjectDetailsDialogProps> = ({
               })}
             </span>
           </div>
-
         </div>
 
         {/* Test Section */}
@@ -991,8 +984,10 @@ const ProjectDetailsDialog: React.FC<ProjectDetailsDialogProps> = ({
         )}
 
         {/* Test History Section */}
-        <TestHistorySection projectId={project.id} refreshTrigger={refreshTrigger}/>
-
+        <TestHistorySection
+          projectId={project.id}
+          refreshTrigger={refreshTrigger}
+        />
       </div>
     </div>
   );

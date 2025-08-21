@@ -24,7 +24,6 @@ export class TestRunService {
     private scriptDetailRepo: Repository<PerfScriptResultDetail>,
   ) {}
 
-  // Lấy lịch sử test theo project, filter category & sub_type, sort thời gian
   async getHistory(
     projectId: number,
     category?: 'api' | 'performance',
@@ -42,7 +41,6 @@ export class TestRunService {
 
     const testRuns = await query.getMany();
 
-    // Map từng test run kèm summary, rawSummary, rawResult
     return await Promise.all(
       testRuns.map(async (testRun) => {
         let summaryData = {};
@@ -57,7 +55,10 @@ export class TestRunService {
             rawSummary = rawData;
             summaryData = this.validateSummaryByType(testRun.sub_type, rawData);
           } catch (e) {
-            console.error(`Error parsing summary for test run ${testRun.id}:`, e);
+            console.error(
+              `Error parsing summary for test run ${testRun.id}:`,
+              e,
+            );
           }
         }
 
@@ -67,7 +68,10 @@ export class TestRunService {
               fs.readFileSync(testRun.raw_result_path, 'utf-8'),
             );
           } catch (e) {
-            console.error(`Error parsing raw result for test run ${testRun.id}:`, e);
+            console.error(
+              `Error parsing raw result for test run ${testRun.id}:`,
+              e,
+            );
           }
         }
 
@@ -81,12 +85,30 @@ export class TestRunService {
     );
   }
 
+  private makeDiff(a?: number | null, b?: number | null) {
+    const valA = typeof a === 'number' ? a : null;
+    const valB = typeof b === 'number' ? b : null;
+
+    return {
+      testA: valA,
+      testB: valB,
+      diff: valB !== null && valA !== null ? valB - valA : null,
+      trend:
+        valB !== null && valA !== null
+          ? valB > valA
+            ? 'increase'
+            : valB < valA
+            ? 'decrease'
+            : 'same'
+          : 'unknown',
+    };
+  }
+
   private roundVal(val: any, decimals = 2) {
     if (typeof val !== 'number') return val;
     return parseFloat(val.toFixed(decimals));
   }
 
-  // Validate & chuẩn hóa summary theo loại test
   private validateSummaryByType(subType: string, data: any): any {
     const isArraySummary = Array.isArray(data);
 
@@ -100,16 +122,34 @@ export class TestRunService {
       case 'quick':
         return isArraySummary
           ? {
-              http_req_duration_p95: extractVal('http_req_duration_p95')?.value
-                ? { value: this.roundVal(extractVal('http_req_duration_p95')?.value) }
-                : { value: this.roundVal(extractVal('http_req_duration_avg')?.value) },
-              error_rate: { value: this.roundVal(extractVal('error_rate')?.value) },
-              http_reqs: { value: this.roundVal(extractVal('http_reqs')?.value, 0) },
-              passes: { value: this.roundVal(extractVal('checks_pass')?.value, 0) },
-              failures: { value: this.roundVal(extractVal('checks_fail')?.value, 0) },
+              http_req_duration_p95: (() => {
+                const p95 = extractVal('http_req_duration_p95')?.value;
+                const p95FromRaw =
+                  extractVal('http_req_duration')?.value?.['p(95)'];
+                const avg = extractVal('http_req_duration_avg')?.value;
+                return { value: this.roundVal(p95 ?? p95FromRaw ?? avg) };
+              })(),
+              error_rate: {
+                value: this.roundVal(extractVal('error_rate')?.value),
+              },
+              http_reqs: {
+                value: this.roundVal(extractVal('http_reqs')?.value, 0),
+              },
+              passes: {
+                value: this.roundVal(extractVal('checks_pass')?.value, 0),
+              },
+              failures: {
+                value: this.roundVal(extractVal('checks_fail')?.value, 0),
+              },
             }
           : {
-              http_req_duration_p95: { value: this.roundVal(data.http_req_duration_p95?.value) },
+              http_req_duration_p95: {
+                value: this.roundVal(
+                  data.http_req_duration_p95?.value ??
+                    data.http_req_duration?.['p(95)'] ??
+                    data.http_req_duration_avg?.value,
+                ),
+              },
               error_rate: { value: this.roundVal(data.error_rate?.value) },
               http_reqs: { value: this.roundVal(data.http_reqs?.value, 0) },
               passes: { value: this.roundVal(data.passes?.value, 0) },
@@ -174,14 +214,12 @@ export class TestRunService {
     }
   }
 
-  // Xoá test run, xoá cả detail & file liên quan
   async deleteTestRun(id: number) {
     const testRun = await this.testRunRepo.findOne({ where: { id } });
     if (!testRun) {
       throw new NotFoundException('Không tìm thấy test run để xoá.');
     }
 
-    // Xoá chi tiết theo loại test
     switch (testRun.sub_type) {
       case 'postman':
         await this.apiDetailRepo.delete({ test_run_id: id });
@@ -194,7 +232,6 @@ export class TestRunService {
         break;
     }
 
-    // Xoá file (input, raw result, summary, time series)
     const filePaths = [
       testRun.input_file_path,
       testRun.raw_result_path,
@@ -220,7 +257,6 @@ export class TestRunService {
     return { message: 'Xoá test run thành công.' };
   }
 
-  // Lấy chi tiết test run, kèm summary, details, rawResult
   async getTestRunDetails(id: number) {
     const testRun = await this.testRunRepo.findOne({
       where: { id },
@@ -231,7 +267,10 @@ export class TestRunService {
     let summaryData = null;
     if (testRun.summary_path) {
       try {
-        const absSummaryPath = path.resolve(process.cwd(), testRun.summary_path);
+        const absSummaryPath = path.resolve(
+          process.cwd(),
+          testRun.summary_path,
+        );
         if (fs.existsSync(absSummaryPath)) {
           summaryData = JSON.parse(fs.readFileSync(absSummaryPath, 'utf-8'));
         }
@@ -243,9 +282,14 @@ export class TestRunService {
     let rawResultData = null;
     if (testRun.raw_result_path) {
       try {
-        const absRawResultPath = path.resolve(process.cwd(), testRun.raw_result_path);
+        const absRawResultPath = path.resolve(
+          process.cwd(),
+          testRun.raw_result_path,
+        );
         if (fs.existsSync(absRawResultPath)) {
-          rawResultData = JSON.parse(fs.readFileSync(absRawResultPath, 'utf-8'));
+          rawResultData = JSON.parse(
+            fs.readFileSync(absRawResultPath, 'utf-8'),
+          );
         }
       } catch (err) {
         console.error(`Error reading raw result file for test run ${id}:`, err);
@@ -254,11 +298,17 @@ export class TestRunService {
 
     let detailsData: any[] = [];
     if (testRun.sub_type === 'postman') {
-      detailsData = await this.apiDetailRepo.find({ where: { test_run_id: id } });
+      detailsData = await this.apiDetailRepo.find({
+        where: { test_run_id: id },
+      });
     } else if (testRun.sub_type === 'quick') {
-      detailsData = await this.quickDetailRepo.find({ where: { testRun: { id } } });
+      detailsData = await this.quickDetailRepo.find({
+        where: { testRun: { id } },
+      });
     } else if (testRun.sub_type === 'script') {
-      detailsData = await this.scriptDetailRepo.find({ where: { test_run_id: id } });
+      detailsData = await this.scriptDetailRepo.find({
+        where: { test_run_id: id },
+      });
     }
 
     return {
@@ -269,90 +319,153 @@ export class TestRunService {
     };
   }
 
-  // So sánh 2 test run cùng loại dựa trên summary
   async compareTests(idA: number, idB: number) {
     const testA = await this.testRunRepo.findOne({ where: { id: idA } });
     const testB = await this.testRunRepo.findOne({ where: { id: idB } });
 
-    if (!testA || !testB) throw new NotFoundException('Không tìm thấy test.');
-
-    // Kiểm tra tồn tại file summary
-    if (!testA.summary_path || !fs.existsSync(path.resolve(process.cwd(), testA.summary_path))) {
-      throw new NotFoundException(`File summary của test run A không tồn tại.`);
-    }
-    if (!testB.summary_path || !fs.existsSync(path.resolve(process.cwd(), testB.summary_path))) {
-      throw new NotFoundException(`File summary của test run B không tồn tại.`);
+    if (!testA || !testB)
+      throw new NotFoundException('Không tìm thấy test run.');
+    if (testA.sub_type !== testB.sub_type) {
+      throw new Error('Chỉ so sánh được 2 test cùng loại.');
     }
 
-    let summaryA;
-    let summaryB;
-    try {
-      summaryA = JSON.parse(fs.readFileSync(path.resolve(process.cwd(), testA.summary_path), 'utf-8'));
-    } catch (e) {
-      throw new Error(`Lỗi parse JSON file summary test A: ${e.message}`);
+    let compareResult: any = {};
+    let lineChartDataA: any[] | null = null;
+    let lineChartDataB: any[] | null = null;
+
+    // --- API Functional Test (Postman) ---
+    if (testA.sub_type === 'postman') {
+      const detailsA = await this.apiDetailRepo.find({
+        where: { test_run_id: idA },
+      });
+      const detailsB = await this.apiDetailRepo.find({
+        where: { test_run_id: idB },
+      });
+
+      const passFailA = {
+        pass: detailsA.filter((d) => d.is_passed).length,
+        fail: detailsA.filter((d) => !d.is_passed).length,
+      };
+      const passFailB = {
+        pass: detailsB.filter((d) => d.is_passed).length,
+        fail: detailsB.filter((d) => !d.is_passed).length,
+      };
+
+      compareResult = {
+        totalRequests: this.makeDiff(detailsA.length, detailsB.length),
+        avgResponseTime: this.makeDiff(
+          detailsA.reduce((sum, d) => sum + d.response_time, 0) /
+            (detailsA.length || 1),
+          detailsB.reduce((sum, d) => sum + d.response_time, 0) /
+            (detailsB.length || 1),
+        ),
+        checks: { testA: passFailA, testB: passFailB },
+      };
     }
 
-    try {
-      summaryB = JSON.parse(fs.readFileSync(path.resolve(process.cwd(), testB.summary_path), 'utf-8'));
-    } catch (e) {
-      throw new Error(`Lỗi parse JSON file summary test B: ${e.message}`);
-    }
+    // --- Quick Performance Test (K6 quick) ---
+    if (testA.sub_type === 'quick') {
+      const detailsA = await this.quickDetailRepo.find({
+        where: { test_run_id: idA },
+      });
+      const detailsB = await this.quickDetailRepo.find({
+        where: { test_run_id: idB },
+      });
 
-    return this.mapCompareSummary(testA, summaryA, testB, summaryB);
-  }
+      const getVal = (arr: PerfQuickResultDetail[], metric: string) =>
+        arr.find((m) => m.metric_name === metric)?.value ?? null;
 
-  private mapCompareSummary(testA: TestRun, summaryA: any, testB: TestRun, summaryB: any) {
-    if (testA.sub_type === 'quick' && testB.sub_type === 'quick') {
-      return {
-        p95Duration: this.makeDiff(summaryA.http_req_duration_p95?.value, summaryB.http_req_duration_p95?.value),
-        errorRate: this.makeDiff(summaryA.error_rate?.value, summaryB.error_rate?.value),
-        requests: this.makeDiff(summaryA.http_reqs?.value, summaryB.http_reqs?.value),
+      compareResult = {
+        p95Duration: this.makeDiff(
+          getVal(detailsA, 'http_req_duration_p95') ??
+            getVal(detailsA, 'http_req_duration_avg'),
+          getVal(detailsB, 'http_req_duration_p95') ??
+            getVal(detailsB, 'http_req_duration_avg'),
+        ),
+
+        errorRate: this.makeDiff(
+          getVal(detailsA, 'error_rate'),
+          getVal(detailsB, 'error_rate'),
+        ),
+        requests: this.makeDiff(
+          getVal(detailsA, 'http_reqs'),
+          getVal(detailsB, 'http_reqs'),
+        ),
         checks: {
-          testA: { pass: summaryA.passes?.value || 0, fail: summaryA.failures?.value || 0 },
-          testB: { pass: summaryB.passes?.value || 0, fail: summaryB.failures?.value || 0 },
+          testA: {
+            pass: getVal(detailsA, 'checks_pass') || 0,
+            fail: getVal(detailsA, 'checks_fail') || 0,
+          },
+          testB: {
+            pass: getVal(detailsB, 'checks_pass') || 0,
+            fail: getVal(detailsB, 'checks_fail') || 0,
+          },
         },
       };
     }
-    if (testA.sub_type === 'postman' && testB.sub_type === 'postman') {
-      return {
-        duration: this.makeDiff(summaryA.duration_ms, summaryB.duration_ms),
-        failAssertions: this.makeDiff(summaryA.failures, summaryB.failures),
-        passAssertions: this.makeDiff(summaryA.passes, summaryB.passes),
+
+    // --- Scripted Performance Test (K6 script) ---
+    if (testA.sub_type === 'script') {
+      const detailsA = await this.scriptDetailRepo.find({
+        where: { test_run_id: idA },
+      });
+      const detailsB = await this.scriptDetailRepo.find({
+        where: { test_run_id: idB },
+      });
+
+      const getMetric = (arr: PerfScriptResultDetail[], name: string) =>
+        arr.find((m) => m.type === 'metric' && m.name === name) || null;
+
+      const getCheckSum = (arr: PerfScriptResultDetail[]) => {
+        const passes = arr
+          .filter((m) => m.type === 'check')
+          .reduce((sum, c) => sum + (c.passes || 0), 0);
+        const fails = arr
+          .filter((m) => m.type === 'check')
+          .reduce((sum, c) => sum + (c.fails || 0), 0);
+        return { pass: passes, fail: fails };
+      };
+
+      compareResult = {
+        p95Duration: this.makeDiff(
+          getMetric(detailsA, 'http_req_duration')?.p95,
+          getMetric(detailsB, 'http_req_duration')?.p95,
+        ),
+        avgDuration: this.makeDiff(
+          getMetric(detailsA, 'http_req_duration')?.avg,
+          getMetric(detailsB, 'http_req_duration')?.avg,
+        ),
+        errorRate: this.makeDiff(
+          (getMetric(detailsA, 'http_req_failed')?.rate ?? 0) * 100,
+          (getMetric(detailsB, 'http_req_failed')?.rate ?? 0) * 100,
+        ),
         checks: {
-          testA: { pass: summaryA.passes || 0, fail: summaryA.failures || 0 },
-          testB: { pass: summaryB.passes || 0, fail: summaryB.failures || 0 },
+          testA: getCheckSum(detailsA),
+          testB: getCheckSum(detailsB),
         },
       };
     }
-    if (testA.sub_type === 'script' && testB.sub_type === 'script') {
-      return {
-        p95Duration: this.makeDiff(summaryA.metrics_overview?.http_req_duration?.['p(95)'], summaryB.metrics_overview?.http_req_duration?.['p(95)']),
-        avgDuration: this.makeDiff(summaryA.metrics_overview?.http_req_duration?.avg, summaryB.metrics_overview?.http_req_duration?.avg),
-        errorRate: this.makeDiff(summaryA.metrics_overview?.http_req_failed?.value * 100, summaryB.metrics_overview?.http_req_failed?.value * 100),
-        checks: {
-          testA: { pass: summaryA.passes?.value || 0, fail: summaryA.failures?.value || 0 },
-          testB: { pass: summaryB.passes?.value || 0, fail: summaryB.failures?.value || 0 },
-        },
-      };
+
+    // Load line chart data nếu là postman hoặc script
+    if (['postman', 'script'].includes(testA.sub_type)) {
+      lineChartDataA = this.readTimeSeriesFile(testA.time_series_path);
+      lineChartDataB = this.readTimeSeriesFile(testB.time_series_path);
     }
-    return {};
-  }
 
-  private makeDiff(a: number, b: number) {
-    return { testA: a, testB: b, diff: b - a };
+    return {
+      subType: testA.sub_type,
+      compareResult,
+      lineChartDataA,
+      lineChartDataB,
+    };
   }
-
-  // --- Các hàm lấy đường dẫn file cho controller tải file ---
 
   async getRawResultPath(id: number): Promise<string | null> {
     const testRun = await this.testRunRepo.findOne({ where: { id } });
     if (!testRun?.raw_result_path) return null;
 
     const absolutePath = path.resolve(process.cwd(), testRun.raw_result_path);
-    if (fs.existsSync(absolutePath)) {
-      return absolutePath;
-    }
-    return null;
+    return fs.existsSync(absolutePath) ? absolutePath : null;
   }
 
   async getSummaryPath(id: number): Promise<string | null> {
@@ -360,10 +473,7 @@ export class TestRunService {
     if (!testRun?.summary_path) return null;
 
     const absolutePath = path.resolve(process.cwd(), testRun.summary_path);
-    if (fs.existsSync(absolutePath)) {
-      return absolutePath;
-    }
-    return null;
+    return fs.existsSync(absolutePath) ? absolutePath : null;
   }
 
   async getInputFilePath(id: number): Promise<string | null> {
@@ -371,10 +481,7 @@ export class TestRunService {
     if (!testRun?.input_file_path) return null;
 
     const absolutePath = path.resolve(process.cwd(), testRun.input_file_path);
-    if (fs.existsSync(absolutePath)) {
-      return absolutePath;
-    }
-    return null;
+    return fs.existsSync(absolutePath) ? absolutePath : null;
   }
 
   async getTimeSeriesPath(id: number): Promise<string | null> {
@@ -382,9 +489,48 @@ export class TestRunService {
     if (!testRun?.time_series_path) return null;
 
     const absolutePath = path.resolve(process.cwd(), testRun.time_series_path);
-    if (fs.existsSync(absolutePath)) {
-      return absolutePath;
-    }
-    return null;
+    return fs.existsSync(absolutePath) ? absolutePath : null;
   }
+
+  private readTimeSeriesFile(filePath?: string): any[] | null {
+  if (!filePath) return null;
+
+  const absPath = path.resolve(process.cwd(), filePath);
+  if (!fs.existsSync(absPath)) return null;
+
+  try {
+    const raw = fs.readFileSync(absPath, 'utf-8').trim();
+    if (!raw) return [];
+
+    // Nếu bắt đầu bằng [, coi như JSON Array (Postman)
+    if (raw.startsWith('[')) {
+      try {
+        const parsed = JSON.parse(raw);
+        return Array.isArray(parsed) ? parsed : [parsed];
+      } catch (err) {
+        console.error(`Invalid JSON array in ${filePath}:`, err);
+        return [];
+      }
+    }
+
+    // Ngược lại coi như JSON Lines (K6)
+    return raw
+      .split('\n')
+      .filter(line => line.trim().length > 0)
+      .map(line => {
+        try {
+          return JSON.parse(line);
+        } catch (err) {
+          console.error(`Invalid JSON line in ${filePath}:`, line);
+          return null;
+        }
+      })
+      .filter(line => line !== null);
+
+  } catch (err) {
+    console.error(`Error reading time series file ${filePath}:`, err);
+    return [];
+  }
+}
+
 }

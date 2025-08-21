@@ -8,6 +8,7 @@ import { TestRunModule } from './test-run/test-run.module';
 import { TestRunController } from './test-run/test-run.controller';
 import { PdfController } from './pdf/pdf.controller';
 import { PdfModule } from './pdf/pdf.module';
+import { ScheduledTestsModule } from './scheduled-test/scheduled-test.module';
 
 
 
@@ -42,7 +43,8 @@ import { PdfModule } from './pdf/pdf.module';
     TestRunModule,
 
     // Import PdfModule để tạo báo cáo PDF
-    PdfModule
+    PdfModule,
+    ScheduledTestsModule
   ],
 })
 export class AppModule {}

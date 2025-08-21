@@ -74,11 +74,11 @@ const { token, user } = res.data
           Chào mừng trở lại, {user.name}!
         </span>
       </div>
-      ), {duration:1000}
+      ), {duration:100}
       )
 
       // Chờ 1s rồi chuyển sang trang dashboard
-      setTimeout(() => router.push("/dashboard"), 1000)
+      setTimeout(() => router.push("/dashboard"), 100)
     } catch (err: any) {
       // Nếu API trả về lỗi, xử lý hiển thị phù hợp
       const message =

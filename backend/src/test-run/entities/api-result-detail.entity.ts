@@ -35,7 +35,7 @@ export class ApiResultDetail {
   assertion_results: any;
 
   @Column('json', { nullable: true })
-  raw_values: Record<string, any>; // ✅ Lưu execution đầy đủ
+  raw_values: Record<string, any>; //  Lưu execution đầy đủ
 
   @CreateDateColumn()
   created_at: Date;

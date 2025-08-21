@@ -1,10 +1,25 @@
 "use client";
 import React, { useEffect, useState } from "react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Loader2, Download, AlertCircle } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import {
+  Loader2,
+  Download,
+  AlertCircle,
+  TrendingUp,
+  TrendingDown,
+  Minus,
+} from "lucide-react";
 import ResponseTimeLineChart from "./ResponseTimeLineChart";
 import CheckBarChart from "./CheckBarChart";
+import api from "@/lib/api";
+import { cn } from "@/lib/utils";
 
 interface DetailCompareDialogProps {
   open: boolean;
@@ -13,13 +28,21 @@ interface DetailCompareDialogProps {
   idB: number;
   subType: "quick" | "postman" | "script";
   title: string;
+  testATime?: string;
+  testBTime?: string;
 }
 
 interface CompareMetric {
   testA: number | null;
   testB: number | null;
   diff: number | null;
+  trend?: "increase" | "decrease" | "same" | "unknown";
 }
+
+const formatNumberNoRound = (num: number | null) => {
+  if (num == null) return NaN;
+  return Math.floor(num * 100) / 100;
+};
 
 export default function DetailCompareDialog({
   open,
@@ -28,9 +51,11 @@ export default function DetailCompareDialog({
   idB,
   subType,
   title,
+  testATime = "",
+  testBTime = "",
 }: DetailCompareDialogProps) {
   const [loading, setLoading] = useState(false);
-  const [compareData, setCompareData] = useState<Record<string, CompareMetric>>({});
+  const [compareResult, setCompareResult] = useState<any>({});
   const [lineDataA, setLineDataA] = useState<any[]>([]);
   const [lineDataB, setLineDataB] = useState<any[]>([]);
   const [checkData, setCheckData] = useState<{
@@ -38,185 +63,242 @@ export default function DetailCompareDialog({
     testB: { pass: number; fail: number };
   } | null>(null);
   const [error, setError] = useState("");
+  const [lineChartMessage, setLineChartMessage] = useState<string | null>(null);
 
   const metricLabels: Record<string, string> = {
-    p95Duration: "P95 Duration (ms)",
-    avgDuration: "Average Duration (ms)",
-    errorRate: "Error Rate (%)",
+    p95Duration: "P95 Duration",
+    avgDuration: "Average Duration",
+    errorRate: "Error Rate",
     requests: "Total Requests",
-    duration: "Total Duration (ms)",
+    totalRequests: "Total Requests",
+    avgResponseTime: "Average Response Time",
+    duration: "Total Duration",
     failAssertions: "Fail Assertions",
     passAssertions: "Pass Assertions",
   };
 
+  const metricUnits: Record<string, string> = {
+    p95Duration: "ms",
+    avgDuration: "ms",
+    errorRate: "%",
+    avgResponseTime: "ms",
+    duration: "ms",
+  };
+
   useEffect(() => {
     if (!open) return;
-
     setLoading(true);
     setError("");
-    setCompareData({});
+    setCompareResult({});
     setLineDataA([]);
     setLineDataB([]);
     setCheckData(null);
+    setLineChartMessage(null);
 
-    const baseUrl = process.env.NEXT_PUBLIC_API_URL || "";
-
-    async function fetchCompareData() {
+    (async () => {
       try {
-        console.log("Fetching compare data from:", `${baseUrl}/test-runs/compare?idA=${idA}&idB=${idB}`);
-        const resCompare = await fetch(`${baseUrl}/test-runs/compare?idA=${idA}&idB=${idB}`);
-        if (!resCompare.ok) {
-          const text = await resCompare.text();
-          console.error("Compare API error response:", text);
-          throw new Error(`Failed to fetch compare data, status ${resCompare.status}`);
+        const { data } = await api.get(
+          `/test-runs/compare?idA=${idA}&idB=${idB}`
+        );
+        setCompareResult(data.compareResult || {});
+        setLineDataA(data.lineChartDataA || []);
+        setLineDataB(data.lineChartDataB || []);
+        if (data.compareResult?.checks) {
+          setCheckData(data.compareResult.checks);
         }
-        const compareRes = await resCompare.json();
-
-        const resSeriesA = await fetch(`${baseUrl}/test-runs/${idA}/time-series`);
-        const seriesA = resSeriesA.ok ? await resSeriesA.json() : [];
-        if (!resSeriesA.ok) console.warn(`Time-series A fetch failed: status ${resSeriesA.status}`);
-
-        const resSeriesB = await fetch(`${baseUrl}/test-runs/${idB}/time-series`);
-        const seriesB = resSeriesB.ok ? await resSeriesB.json() : [];
-        if (!resSeriesB.ok) console.warn(`Time-series B fetch failed: status ${resSeriesB.status}`);
-
-        setCompareData(compareRes || {});
-        setLineDataA(Array.isArray(seriesA) ? seriesA : []);
-        setLineDataB(Array.isArray(seriesB) ? seriesB : []);
-
-        if (compareRes?.checks) {
-          setCheckData({
-            testA: {
-              pass: compareRes.checks.testA?.pass ?? 0,
-              fail: compareRes.checks.testA?.fail ?? 0,
-            },
-            testB: {
-              pass: compareRes.checks.testB?.pass ?? 0,
-              fail: compareRes.checks.testB?.fail ?? 0,
-            },
-          });
-        } else {
-          setCheckData(null);
-        }
-      } catch (err) {
-        console.error("Fetch compare data error:", err);
+      } catch {
         setError("Không thể tải dữ liệu so sánh");
       } finally {
         setLoading(false);
       }
-    }
-
-    fetchCompareData();
+    })();
   }, [open, idA, idB]);
 
-  const getColor = (diff: number | null) => {
-    if (diff == null) return "text-gray-400";
-    if (diff < 0) return "text-green-600 font-semibold";
-    if (diff > 0) return "text-red-600 font-semibold";
-    return "text-gray-400";
+  const getTrendIcon = (metric: CompareMetric) => {
+    if (!metric || metric.diff == null) return <Minus className="w-4 h-4" />;
+    switch (metric.trend) {
+      case "decrease":
+        return <TrendingDown className="w-4 h-4" />;
+      case "increase":
+        return <TrendingUp className="w-4 h-4" />;
+      default:
+        return <Minus className="w-4 h-4" />;
+    }
+  };
+
+  const formatValue = (val: number | null, key: string) => {
+    if (val == null) return "-";
+    const num = formatNumberNoRound(val);
+    if (isNaN(num)) return "-";
+    const formatted = num.toFixed(2);
+    return `${formatted}${metricUnits[key] ? ` ${metricUnits[key]}` : ""}`;
+  };
+
+  const getTrendBadge = (metric: CompareMetric, key: string) => {
+    if (!metric || metric.diff == null) return null;
+    const num = formatNumberNoRound(metric.diff);
+    if (isNaN(num)) return null;
+    const diffFormatted = num.toFixed(2);
+    return (
+      <Badge
+        variant={
+          metric.trend === "decrease"
+            ? "success"
+            : metric.trend === "increase"
+            ? "destructive"
+            : "secondary"
+        }
+        className="flex items-center gap-1 font-medium"
+      >
+        {getTrendIcon(metric)}
+        {metric.diff > 0 ? "+" : ""}
+        {diffFormatted}
+        {metricUnits[key] && (
+          <span className="text-xs opacity-75">{metricUnits[key]}</span>
+        )}
+      </Badge>
+    );
+  };
+
+  const renderMetricsTable = () => {
+    const metricEntries = Object.entries(compareResult).filter(
+      ([k, v]) => k !== "checks" && v && typeof v === "object" && "diff" in v
+    );
+    if (!metricEntries.length) {
+      return (
+        <div className="text-center py-12 text-muted-foreground">
+          <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-muted flex items-center justify-center">
+            <AlertCircle className="w-8 h-8" />
+          </div>
+          <p>Không có dữ liệu metrics để hiển thị</p>
+        </div>
+      );
+    }
+    return (
+      <div className="overflow-hidden rounded-xl border bg-gradient-card shadow-soft">
+        <div className="overflow-x-auto">
+          <table className="min-w-full">
+            <thead>
+              <tr className="border-b bg-muted/30">
+                <th className="px-6 py-4 text-left text-sm font-semibold">Metric</th>
+                <th className="px-6 py-4 text-center text-sm font-semibold">Test A</th>
+                <th className="px-6 py-4 text-center text-sm font-semibold">Test B</th>
+                <th className="px-6 py-4 text-center text-sm font-semibold">Difference</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border/50">
+              {metricEntries.map(([key, val]) => {
+                const m = val as CompareMetric;
+                return (
+                  <tr key={key} className="hover:bg-muted/20 transition-colors">
+                    <td className="px-6 py-4 font-medium">{metricLabels[key] || key}</td>
+                    <td className="px-6 py-4 text-center">
+                      <span className="font-mono bg-secondary/50 px-3 py-1 rounded-full">
+                        {formatValue(m.testA, key)}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 text-center">
+                      <span className="font-mono bg-secondary/50 px-3 py-1 rounded-full">
+                        {formatValue(m.testB, key)}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 text-center flex justify-center">
+                      {getTrendBadge(m, key)}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    );
   };
 
   if (!open) return null;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto rounded-xl border border-gray-300 bg-white p-8 shadow-lg">
-        <DialogHeader className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
-          <DialogTitle className="text-4xl font-extrabold text-gray-900">
-            {title}
+      <DialogContent
+        className={cn(
+          "bg-white border-0 rounded-xl",
+          "!w-[100vw] !max-w-4xl !max-h-[90vh]",
+          "shadow-elegant overflow-y-auto scrollbar-thin scrollbar-clear"
+        )}
+      >
+        <DialogHeader className="relative">
+          <DialogTitle className="text-3xl font-bold">
+            Performance Test Comparison
           </DialogTitle>
-          <Button
-            variant="outline"
-            size="sm"
-            className="flex items-center space-x-2"
-            onClick={() => window.print()}
-          >
-            <Download className="w-5 h-5" />
-            <span>Export PDF</span>
-          </Button>
+          <p className="text-muted-foreground mt-1">
+            Detailed comparison between Test A ({testATime}) and Test B ({testBTime})
+          </p>
+          <div className="absolute top-0 right-10">
+            <Button variant="outline" size="sm" onClick={() => window.print()}>
+              <Download className="w-4 h-4 mr-2" /> Export PDF
+            </Button>
+          </div>
         </DialogHeader>
 
-        {loading && (
-          <div className="flex justify-center items-center py-24">
-            <Loader2 className="animate-spin text-blue-600 w-12 h-12" />
-          </div>
-        )}
+        <div className="space-y-8 pt-4">
+          {loading ? (
+            <div className="flex flex-col items-center py-24 space-y-4">
+              <Loader2 className="animate-spin w-10 h-10 text-primary" />
+              <p className="text-muted-foreground">Đang tải dữ liệu...</p>
+            </div>
+          ) : error ? (
+            <div className="flex flex-col items-center py-24 space-y-4">
+              <AlertCircle className="w-8 h-8 text-destructive" />
+              <p className="text-destructive">{error}</p>
+              <Button variant="outline" onClick={() => window.location.reload()}>
+                Thử lại
+              </Button>
+            </div>
+          ) : (
+            <>
+              <section className="space-y-4">
+                <h3 className="text-xl font-semibold">Performance Metrics</h3>
+                {renderMetricsTable()}
+              </section>
 
-        {error && (
-          <p className="text-center text-red-700 font-semibold text-lg">{error}</p>
-        )}
+              <section className="space-y-8">
+                {["postman", "script"].includes(subType) && (
+                  <div className="space-y-4">
+                    <h3 className="text-xl font-semibold">Response Time Trends</h3>
+                    {lineDataA.length || lineDataB.length ? (
+                      <div className="p-6 rounded-xl bg-gradient-card border shadow-soft">
+                      
+                        <ResponseTimeLineChart
+                          dataA={lineDataA}
+                          dataB={lineDataB}
+                          pointSpacing={80}
+                          minChartWidth={800}
+                        />
+                      </div>
+                    ) : (
+                      <div className="text-center py-12 text-muted-foreground rounded-xl bg-gradient-card border">
+                        <AlertCircle className="w-8 h-8 mx-auto mb-2" />
+                        <p>
+                          {lineChartMessage ||
+                            "Không có dữ liệu time-series để hiển thị"}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )}
 
-        {!loading && !error && (
-          <div className="space-y-12">
-            {/* Summary Table */}
-            <section>
-              <h3 className="text-2xl font-semibold mb-6 border-b border-gray-300 pb-3">
-                Summary So Sánh
-              </h3>
-              <div className="overflow-x-auto rounded-lg border border-gray-300 shadow-sm">
-                <table className="min-w-full table-auto border-collapse text-left">
-                  <thead className="bg-gray-50 text-gray-700 uppercase font-semibold text-base">
-                    <tr>
-                      <th className="px-6 py-4">Metric</th>
-                      <th className="px-6 py-4">Test A</th>
-                      <th className="px-6 py-4">Test B</th>
-                      <th className="px-6 py-4">Δ (Chênh lệch)</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {Object.entries(compareData).map(([key, val]) => {
-                      if (
-                        key === "checks" ||
-                        !val ||
-                        typeof val !== "object" ||
-                        val.testA === undefined
-                      )
-                        return null;
-                      return (
-                        <tr
-                          key={key}
-                          className="even:bg-gray-50 border-t border-gray-200 text-lg"
-                        >
-                          <td className="px-6 py-4 font-medium">{metricLabels[key] || key}</td>
-                          <td className="px-6 py-4">{val.testA ?? "-"}</td>
-                          <td className="px-6 py-4">{val.testB ?? "-"}</td>
-                          <td className={`px-6 py-4 ${getColor(val.diff)}`}>
-                            {val.diff != null ? `${val.diff > 0 ? "+" : ""}${val.diff}` : "-"}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </section>
-
-            {/* Charts */}
-            <section className="space-y-8">
-              {(lineDataA.length > 0 || lineDataB.length > 0) ? (
-                <div>
-                  <h3 className="text-2xl font-semibold mb-6 border-b border-gray-300 pb-3">
-                    Response Time Over Time
-                  </h3>
-                  <ResponseTimeLineChart dataA={lineDataA} dataB={lineDataB} />
-                </div>
-              ) : (
-                <p className="text-center italic text-gray-500 text-lg">
-                  Không có dữ liệu time-series để hiển thị
-                </p>
-              )}
-
-              {checkData && (
-                <div>
-                  <h3 className="text-2xl font-semibold mb-6 border-b border-gray-300 pb-3">
-                    Checks Pass/Fail
-                  </h3>
-                  <CheckBarChart data={checkData} />
-                </div>
-              )}
-            </section>
-          </div>
-        )}
+                {checkData && (
+                  <div className="space-y-4">
+                    <h3 className="text-xl font-semibold">Test Results Analysis</h3>
+                    <div className="p-6 rounded-xl bg-gradient-card border shadow-soft">
+                      <CheckBarChart data={checkData} />
+                    </div>
+                  </div>
+                )}
+              </section>
+            </>
+          )}
+        </div>
       </DialogContent>
     </Dialog>
   );

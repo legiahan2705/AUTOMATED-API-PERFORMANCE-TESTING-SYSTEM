@@ -9,7 +9,7 @@ import {
   SidebarGroupContent,
   SidebarMenu,
   SidebarMenuButton,
-  SidebarMenuItem, // thực chất là <li>
+  SidebarMenuItem, 
 } from "@/components/ui/sidebar"
 
 export interface NavItem {

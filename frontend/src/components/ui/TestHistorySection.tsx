@@ -61,6 +61,33 @@ export default function TestHistorySection({
   const [selectedCompareIds, setSelectedCompareIds] = useState<number[]>([]);
   const [openCompare, setOpenCompare] = useState(false);
 
+  const testA = testHistory.find((t) => t.id === selectedCompareIds[0]);
+  const testB = testHistory.find((t) => t.id === selectedCompareIds[1]);
+
+  const testATime = testA
+    ? new Date(testA.created_at).toLocaleString("vi-VN", {
+        hour12: false,
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+      })
+    : "";
+
+  const testBTime = testB
+    ? new Date(testB.created_at).toLocaleString("vi-VN", {
+        hour12: false,
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+      })
+    : "";
+
   function toggleCompareSelection(id: number) {
     setSelectedCompareIds((prev) => {
       if (prev.includes(id)) {
@@ -300,8 +327,9 @@ export default function TestHistorySection({
                 suffix={errorRateParsed.suffix}
               />
             </TableCell>
-            {checkbox}
+            
             {actions}
+            {checkbox}
           </>
         );
       }
@@ -451,15 +479,9 @@ export default function TestHistorySection({
             : selectedSubType === "postman"
             ? "API (Postman) Test"
             : "K6 Script Performance Test"
-        }
-          - ${new Date(
-            testHistory.find((t) => t.id === selectedCompareIds[0])
-              ?.created_at ?? ""
-          ).toLocaleDateString("vi-VN")}
-          vs ${new Date(
-            testHistory.find((t) => t.id === selectedCompareIds[1])
-              ?.created_at ?? ""
-          ).toLocaleDateString("vi-VN")}`}
+        } - ${testATime} vs ${testBTime}`}
+        testATime={testATime}
+        testBTime={testBTime}
       />
     </>
   );
