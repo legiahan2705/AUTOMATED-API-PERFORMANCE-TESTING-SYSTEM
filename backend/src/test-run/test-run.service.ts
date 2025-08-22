@@ -533,4 +533,35 @@ export class TestRunService {
   }
 }
 
+  
+  // Lấy danh sách test run theo lịch
+  async getTestRunsBySchedule(scheduleId: number) {
+    const testRuns = await this.testRunRepo.find({
+      where: { scheduled_test_id: scheduleId },
+      order: { created_at: 'DESC' },
+    });
+
+    return await Promise.all(
+      testRuns.map(async (testRun) => {
+        let summaryData = {};
+        if (testRun.summary_path && fs.existsSync(testRun.summary_path)) {
+          try {
+            summaryData = JSON.parse(
+              fs.readFileSync(testRun.summary_path, 'utf-8'),
+            );
+          } catch (e) {
+            console.error(
+              `Error parsing summary for test run ${testRun.id}:`,
+              e,
+            );
+          }
+        }
+
+        return {
+          ...testRun,
+          summary: summaryData,
+        };
+      }),
+    );
+  }
 }

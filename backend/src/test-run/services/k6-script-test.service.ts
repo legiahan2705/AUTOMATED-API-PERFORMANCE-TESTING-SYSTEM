@@ -34,7 +34,7 @@ export class K6ScriptTestService {
    * @param projectId - ID project cần chạy test
    * @returns test_run_id và summary đã phân tích
    */
-  async runK6ScriptTest(projectId: number) {
+  async runK6ScriptTest(projectId: number , scheduled_test_id?: number) {
     // Lấy thông tin project, kiểm tra tồn tại file k6 script
     const project = await this.projectRepo.findOne({
       where: { id: projectId },
@@ -104,6 +104,7 @@ export class K6ScriptTestService {
     // Tạo và lưu bản ghi test run mới vào database
     const testRun = this.testRunRepo.create({
       project_id: projectId,
+      scheduled_test_id: scheduled_test_id || null,
       category: 'performance',
       sub_type: 'script',
       input_file_path: inputPath,

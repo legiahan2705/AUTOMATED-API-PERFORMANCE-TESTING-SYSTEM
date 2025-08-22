@@ -24,7 +24,7 @@ export class PostmanTestService {
     private projectRepo: Repository<Project>,
   ) {}
 
-  async runPostmanTest(projectId: number) {
+  async runPostmanTest(projectId: number , scheduled_test_id?: number) {
     const project = await this.projectRepo.findOne({
       where: { id: projectId },
     });
@@ -67,6 +67,7 @@ export class PostmanTestService {
 
     const testRun = this.testRunRepo.create({
       project_id: projectId,
+      scheduled_test_id: scheduled_test_id || null,
       category: 'api',
       sub_type: 'postman',
       input_file_path: inputPath,

@@ -4,6 +4,8 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import axios from "axios";
 import { formatDistanceToNow } from "date-fns";
 
+import ScheduleDetailDialog from "./ScheduleDetailDialog";
+
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -271,6 +273,11 @@ export default function ScheduledTestsTable() {
     searchRef.current = window.setTimeout(() => {}, 250);
   };
 
+  const [selectedScheduleId, setSelectedScheduleId] = useState<number | null>(
+    null
+  );
+  const [dialogOpen, setDialogOpen] = useState(false);
+
   return (
     <div className="border-0 p-0 m-0 ">
       <div className="container mx-auto max-w-7xl border-0 p-0 m-0">
@@ -437,6 +444,10 @@ export default function ScheduledTestsTable() {
                           <TableRow
                             key={s.id}
                             className="hover:bg-[#cae0ffb5] transition-colors"
+                            onClick={() => {
+                              setSelectedScheduleId(s.id);
+                              setDialogOpen(true);
+                            }}
                           >
                             <TableCell className="text-center font-mono text-muted-foreground">
                               {index + 1}
@@ -495,7 +506,10 @@ export default function ScheduledTestsTable() {
                                 <Button
                                   size="sm"
                                   variant="outline"
-                                  onClick={() => runNow(s)}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    runNow(s);
+                                  }}
                                   className="hover:bg-primary hover:text-primary-foreground"
                                 >
                                   <Play className="w-3 h-3 mr-1" />
@@ -610,6 +624,14 @@ export default function ScheduledTestsTable() {
           </CardContent>
         </Card>
       </div>
+
+      <ScheduleDetailDialog
+        open={dialogOpen}
+        onClose={() => setDialogOpen(false)}
+        scheduleId={selectedScheduleId}
+       
+        
+      />
     </div>
   );
 }

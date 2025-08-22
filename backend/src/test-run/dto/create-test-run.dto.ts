@@ -4,6 +4,11 @@ export class CreateTestRunDto {
   @IsNumber()
   project_id: number;
 
+  @IsOptional()
+  @IsNumber()
+  scheduledTestId?: number;
+
+
   @IsEnum(['api', 'performance'])
   category: 'api' | 'performance';
 

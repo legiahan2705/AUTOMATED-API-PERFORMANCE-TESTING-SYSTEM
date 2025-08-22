@@ -36,7 +36,7 @@ export class TestRunController {
   }
 
   // Tải file raw result
-   @Get(':id/raw-result/download')
+  @Get(':id/raw-result/download')
   async downloadRawResult(@Param('id') id: string, @Res() res: Response) {
     const filePath = await this.testRunService.getRawResultPath(+id);
     if (!filePath) {
@@ -49,7 +49,8 @@ export class TestRunController {
   @Get(':id/raw-result/content')
   async getRawResultContent(@Param('id') id: number) {
     const filePath = await this.testRunService.getRawResultPath(id);
-    if (!filePath) throw new NotFoundException('Không tìm thấy file raw result.');
+    if (!filePath)
+      throw new NotFoundException('Không tìm thấy file raw result.');
 
     try {
       return fs.readFileSync(filePath, 'utf-8');
@@ -98,34 +99,42 @@ export class TestRunController {
 
   // Lấy dữ liệu time series để vẽ biểu đồ
   @Get(':id/time-series')
-async getTimeSeriesData(@Param('id') id: number, @Res() res: Response) {
-  try {
-    const filePath = await this.testRunService.getTimeSeriesPath(id);
-    if (!filePath || !fs.existsSync(filePath)) {
+  async getTimeSeriesData(@Param('id') id: number, @Res() res: Response) {
+    try {
+      const filePath = await this.testRunService.getTimeSeriesPath(id);
+      if (!filePath || !fs.existsSync(filePath)) {
+        return res.status(200).json([]);
+      }
+
+      const raw = fs.readFileSync(filePath, 'utf-8').trim();
+      if (!raw) return res.status(200).json([]);
+
+      const jsonLines = raw
+        .split('\n')
+        .filter((line) => line.trim().length > 0)
+        .map((line) => {
+          try {
+            return JSON.parse(line);
+          } catch (err) {
+            console.error(
+              `Invalid JSON line in time-series file ${filePath}:`,
+              line,
+            );
+            return null;
+          }
+        })
+        .filter((line) => line !== null); // bỏ line lỗi
+
+      return res.json(jsonLines);
+    } catch (err) {
+      console.error(`Error đọc file time-series của test run ${id}:`, err);
       return res.status(200).json([]);
     }
-
-    const raw = fs.readFileSync(filePath, 'utf-8').trim();
-    if (!raw) return res.status(200).json([]);
-
-    const jsonLines = raw
-      .split('\n')
-      .filter(line => line.trim().length > 0)
-      .map(line => {
-        try {
-          return JSON.parse(line);
-        } catch (err) {
-          console.error(`Invalid JSON line in time-series file ${filePath}:`, line);
-          return null;
-        }
-      })
-      .filter(line => line !== null); // bỏ line lỗi
-
-    return res.json(jsonLines);
-  } catch (err) {
-    console.error(`Error đọc file time-series của test run ${id}:`, err);
-    return res.status(200).json([]);
   }
-}
 
+// Lấy danh sách test run theo lịch
+  @Get('schedule/:id')
+  async getTestRunsBySchedule(@Param('id') id: number) {
+    return this.testRunService.getTestRunsBySchedule(id);
+  }
 }

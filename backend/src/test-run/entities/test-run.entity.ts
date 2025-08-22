@@ -5,11 +5,27 @@ import {
 } from 'typeorm';
 import { Project } from 'src/project/entities/project.entity'; 
 import { PerfQuickResultDetail } from './perf_quick_result_detail.entity';
+import { ScheduledTest } from 'src/scheduled-test/entities/scheduled-test.entity';
 
 @Entity('test_runs')
 export class TestRun {
   @PrimaryGeneratedColumn()
   id: number;
+
+  
+@Column({ nullable: true })
+scheduled_test_id: number | null;
+
+
+
+@ManyToOne(() => ScheduledTest, (scheduledTest) => scheduledTest.testRuns, {
+  onDelete: 'SET NULL',
+})
+@JoinColumn({ name: 'scheduled_test_id' })
+scheduledTest: ScheduledTest;
+
+
+  
 
   @Column()
   project_id: number;
@@ -18,12 +34,16 @@ export class TestRun {
     onDelete: 'CASCADE',
   })
   @JoinColumn({ name: 'project_id' })
-  project: Project; // <-- Đặt JoinColumn ngay sau ManyToOne
+  project: Project; 
+
+
 
   @OneToMany(() => PerfQuickResultDetail, (detail) => detail.testRun, {
     cascade: true,
   })
   perfQuickResultDetails: PerfQuickResultDetail[];
+
+
 
   @Column({ type: 'enum', enum: ['api', 'performance'] })
   category: 'api' | 'performance';

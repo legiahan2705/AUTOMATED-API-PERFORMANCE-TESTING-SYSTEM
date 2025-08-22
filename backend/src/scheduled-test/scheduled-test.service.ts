@@ -85,11 +85,11 @@ export class ScheduledTestsService {
         let url = '';
         const baseUrl = process.env.TEST_RUN_API_BASE || 'http://localhost:3000';
         if (schedule.subType === 'postman') {
-          url = `${baseUrl}/test-run/postman/${schedule.projectId}`;
+          url = `${baseUrl}/test-run/postman/${schedule.projectId }?scheduleId=${schedule.id}`;
         } else if (schedule.subType === 'quick') {
-          url = `${baseUrl}/test-run/performance/quick/${schedule.projectId}`;
+          url = `${baseUrl}/test-run/performance/quick/${schedule.projectId }?scheduleId=${schedule.id}`;
         } else if (schedule.subType === 'script') {
-          url = `${baseUrl}/test-run/performance/k6/${schedule.projectId}`;
+          url = `${baseUrl}/test-run/performance/script/${schedule.projectId }?scheduleId=${schedule.id}`;
         }
 
         // Gọi API POST sang BE test-run với kiểu dữ liệu trả về đã khai báo

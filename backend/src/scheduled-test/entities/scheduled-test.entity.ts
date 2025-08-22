@@ -2,6 +2,7 @@ import {
   Entity,
   Column,
   PrimaryGeneratedColumn,
+  OneToMany,
   ManyToOne,
   JoinColumn,
   CreateDateColumn,
@@ -9,6 +10,7 @@ import {
 } from 'typeorm';
 import { Project } from '../../project/entities/project.entity';
 import { User } from 'src/auth/entities/user.entity';
+import { TestRun } from 'src/test-run/entities/test-run.entity';
 
 @Entity('scheduled_tests')
 export class ScheduledTest {
@@ -22,6 +24,10 @@ export class ScheduledTest {
 
   @Column()
   userId: number;
+
+  // Quan hệ tới Test Run
+  @OneToMany(() => TestRun, (testRun) => testRun.scheduledTest)
+  testRuns: TestRun[];
 
   // Quan hệ tới Project
   @ManyToOne(() => Project)
