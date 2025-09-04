@@ -22,9 +22,10 @@ export class Project {
 
   
   @OneToMany(() => TestRun, (testRun) => testRun.project, {
-    cascade: true, 
-  })
-  testRuns: TestRun[];
+  cascade: true,
+  onDelete: 'CASCADE',
+})
+testRuns: TestRun[];
 
   @Column()
   name: string;
@@ -68,4 +69,6 @@ export class Project {
 
   @Column({ nullable:true }) 
   method: string; 
+
+  
 }

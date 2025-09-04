@@ -61,22 +61,22 @@ const TEST_TYPE_OPTIONS = [
     key: "postman" as SubType,
     label: "Postman API",
     icon: FlaskConical,
-    description: "Chạy collection Postman đã gắn ở project",
-    color: "from-orange-500 to-red-500",
+    description: "Run Postman Collection",
+    color: "from-[#658ec7] to-[#8396c9]",
   },
   {
     key: "quick" as SubType,
     label: "Performance - Quick",
     icon: SlidersHorizontal,
-    description: "Gửi request nhanh kèm VUs & duration",
-    color: "from-blue-500 to-cyan-500",
+    description: "Send quick requests with VUs & duration",
+    color: "from-[#658ec7] to-[#8396c9]",
   },
   {
     key: "script" as SubType,
     label: "Performance - Script",
     icon: Beaker,
-    description: "Chạy script k6 từ project",
-    color: "from-purple-500 to-pink-500",
+    description: "Run K6 Script ",
+    color: "from-[#658ec7] to-[#c4a5c2]",
   },
 ];
 
@@ -125,7 +125,7 @@ export default function CreateScheduleDialog({
       .then((res) => setProjects(res.data ?? []))
       .catch((err) => {
         console.error(err);
-        toast.error("Không tải được danh sách project");
+        toast.error("Failed to load project list");
       })
       .finally(() => setLoadingProjects(false));
   }, [open]);
@@ -137,9 +137,9 @@ export default function CreateScheduleDialog({
       const list = res.data ?? [];
       setProjects(list);
       if (list.length) setProjectId(list[0].id);
-      toast.success("Đã tải lại danh sách project");
+      toast.success("Project list refreshed");
     } catch (e) {
-      toast.error("Không thể làm mới danh sách project");
+      toast.error("Failed to refresh project list");
     } finally {
       setLoadingProjects(false);
     }
@@ -243,34 +243,50 @@ export default function CreateScheduleDialog({
   };
 
   const handleCreate = async () => {
-    if (!canCreate) {
-      toast.error("Kiểm tra lại thông tin trước khi tạo lịch");
-      return;
-    }
-
     try {
       setSubmitting(true);
-      const payload = {
-        projectId: projectId!,
-        category: subType === "postman" ? ("api" as const) : ("perf" as const),
-        subType,
-        cronExpression: cronExpression.trim(),
-        emailTo: emailTo.trim() || null,
-        isActive: true,
-        configJson: buildConfigJson(),
-      };
 
-      await api.post("/scheduled-tests", payload);
+      if (subType === "quick") {
+        // Send JSON
+        const payload = {
+          projectId,
+          category: "perf",
+          subType,
+          cronExpression,
+          emailTo,
+          isActive: true,
+          configJson: buildConfigJson(),
+        };
 
-      toast.success("Tạo lịch thành công");
+        await api.post("/scheduled-tests", payload);
+      } else {
+        // Send FormData
+        const form = new FormData();
+        form.append("projectId", String(projectId));
+        form.append("category", subType === "postman" ? "api" : "perf");
+        form.append("subType", subType);
+        form.append("cronExpression", cronExpression);
+        if (emailTo) form.append("emailTo", emailTo);
+        form.append("isActive", "true");
+        form.append("configJson", JSON.stringify(buildConfigJson()));
 
+        if (subType === "postman" && postmanFile) {
+          form.append("file", postmanFile);
+        }
+        if (subType === "script" && scriptFile) {
+          form.append("file", scriptFile);
+        }
+
+        await api.post("/scheduled-tests", form, {});
+      }
+
+      toast.success("Schedule created successfully");
       setOpen(false);
       resetAll();
       onCreated?.();
     } catch (err: any) {
       console.error(err);
-      const msg = err?.response?.data?.message;
-      toast.error(typeof msg === "string" ? msg : "Đã có lỗi xảy ra");
+      toast.error(err?.response?.data?.message ?? "An error occurred");
     } finally {
       setSubmitting(false);
     }
@@ -289,15 +305,15 @@ export default function CreateScheduleDialog({
       className={cn(
         "flex items-center gap-3 rounded-xl px-4 py-3 transition-all duration-300",
         active
-          ? "bg-gradient-to-r from-primary/10 to-primary-glow/10 border border-primary/20 shadow-md"
-          : "bg-muted/30 hover:bg-muted/50"
+          ? "bg-gradient-to-r from-[#658ec7]/20 to-[#c4a5c2]/20 border border-[#658ec7]/30 shadow-md"
+          : "bg-[#f3f7f7ca] hover:bg-muted/50"
       )}
     >
       <div
         className={cn(
           "flex items-center justify-center w-6 h-6 rounded-full text-xs font-bold transition-all",
           active
-            ? "bg-primary text-primary-foreground shadow-sm"
+            ? "bg-[#658ec7] text-white shadow-sm"
             : "bg-muted-foreground text-background"
         )}
       >
@@ -306,7 +322,7 @@ export default function CreateScheduleDialog({
       <span
         className={cn(
           "text-sm font-medium transition-colors",
-          active ? "text-primary" : "text-muted-foreground"
+          active ? "text-[#658ec7]" : "text-muted-foreground"
         )}
       >
         {title}
@@ -324,39 +340,42 @@ export default function CreateScheduleDialog({
     >
       <DialogTrigger asChild>
         {trigger ?? (
-          <Button className="rounded-2xl shadow-lg hover:shadow-xl">
+          <Button className="rounded-2xl shadow-lg hover:shadow-xl bg-gradient-to-r from-[#658ec7] to-[#c4a5c2] hover:from-[#5a7db5] hover:to-[#b394b0]">
             <Plus className="w-4 h-4" />
             New Schedule
           </Button>
         )}
       </DialogTrigger>
 
-     <DialogContent
-             className={cn(
-               "bg-white border-0 rounded-xl",
-               "!w-[100vw] !max-w-4xl !max-h-[90vh]",
-               "shadow-elegant overflow-y-auto scrollbar-thin scrollbar-clear"
-             )}
-           >
-
+      <DialogContent
+        className={cn(
+          "bg-[#cae0ff] border-0 rounded-xl",
+          "!w-[100vw] !max-w-4xl !max-h-[90vh]",
+          "shadow-[0_0_10px_rgba(255,255,255,0.6)] overflow-y-auto scrollbar-clear"
+        )}
+      >
         <DialogHeader className="text-center space-y-3">
-          <DialogTitle className="text-2xl font-bold flex items-center justify-center gap-3">
-            <div className="p-2 rounded-xl bg-gradient-to-r from-primary/10 to-primary-glow/10">
-              <CalendarClock className="w-6 h-6 text-primary" />
+          <DialogTitle className="text-2xl font-bold flex items-center justify-center gap-3 text-[#658ec7]">
+            <div className="p-2 rounded-xl bg-gradient-to-r from-[#658ec7]/20 to-[#c4a5c2]/20">
+              <CalendarClock className="w-6 h-6 text-[#658ec7]" />
             </div>
             Create New Schedule
           </DialogTitle>
           <DialogDescription className="text-base">
-            Thiết lập lịch chạy kiểm thử tự động cho project của bạn
+            Set up automated test schedules for your projects
           </DialogDescription>
         </DialogHeader>
 
         {/* Step Indicators */}
         <div className="grid gap-2 sm:grid-cols-4 mb-6">
-          <StepIndicator stepNum={1} title="Loại test" active={step === 1} />
+          <StepIndicator stepNum={1} title="Test Type" active={step === 1} />
           <StepIndicator stepNum={2} title="Project" active={step === 2} />
-          <StepIndicator stepNum={3} title="Cấu hình" active={step === 3} />
-          <StepIndicator stepNum={4} title="Lịch trình" active={step === 4} />
+          <StepIndicator
+            stepNum={3}
+            title="Configuration"
+            active={step === 3}
+          />
+          <StepIndicator stepNum={4} title="Schedule" active={step === 4} />
         </div>
 
         {/* Step Content */}
@@ -365,11 +384,9 @@ export default function CreateScheduleDialog({
           {step === 1 && (
             <div className="space-y-4">
               <div className="text-center">
-                <h3 className="text-lg font-semibold mb-2">
-                  Chọn loại kiểm thử
-                </h3>
+                <h3 className="text-lg font-semibold mb-2 text-[#658ec7]">Choose Test Type</h3>
                 <p className="text-muted-foreground">
-                  Chọn loại kiểm thử phù hợp với nhu cầu của bạn
+                  Select the type of test that fits your needs
                 </p>
               </div>
 
@@ -386,8 +403,8 @@ export default function CreateScheduleDialog({
                       className={cn(
                         "group relative overflow-hidden rounded-2xl border p-6 text-left transition-all duration-300 hover:shadow-lg hover:-translate-y-1",
                         isActive
-                          ? "border-primary bg-gradient-to-br from-primary/5 to-primary-glow/5 shadow-md ring-2 ring-primary/20"
-                          : "border-border hover:border-primary/30"
+                          ? "border-[#658ec7]  bg-[#658ec7] shadow-md ring-2 ring-[#658ec7]/30"
+                          : "border-white hover:border-[#658ec7]/50"
                       )}
                     >
                       <div className="relative z-10">
@@ -396,18 +413,27 @@ export default function CreateScheduleDialog({
                             className={cn(
                               "w-8 h-8 transition-colors",
                               isActive
-                                ? "text-primary"
-                                : "text-muted-foreground group-hover:text-primary"
+                                ? "text-[white]"
+                                : "text-[#658ec7] group-hover:text-[#658ec7]"
                             )}
                           />
                           {isActive && (
-                            <CheckCircle2 className="w-5 h-5 text-primary" />
+                            <CheckCircle2 className="w-5 h-5 text-[white]" />
                           )}
                         </div>
-                        <h4 className="font-semibold text-foreground mb-2">
+                        <h4
+                          className={`font-semibold mb-2 ${
+                            isActive ? "text-white" : "text-[#658ec7]"
+                          }`}
+                        >
                           {option.label}
                         </h4>
-                        <p className="text-sm text-muted-foreground">
+
+                        <p
+                          className={`text-sm ${
+                            isActive ? "text-white" : "text-[#658ec7]"
+                          }`}
+                        >
                           {option.description}
                         </p>
                       </div>
@@ -415,7 +441,7 @@ export default function CreateScheduleDialog({
                       {isActive && (
                         <div
                           className={cn(
-                            "absolute inset-0 bg-gradient-to-r opacity-5",
+                            "absolute inset-0 bg-gradient-to-r opacity-5 ",
                             option.color
                           )}
                         />
@@ -431,25 +457,25 @@ export default function CreateScheduleDialog({
           {step === 2 && (
             <div className="space-y-6">
               <div className="text-center">
-                <h3 className="text-lg font-semibold mb-2">Chọn project</h3>
+                <h3 className="text-lg font-semibold mb-2 text-[#658ec7]">Select Project</h3>
                 <p className="text-muted-foreground">
-                  Lựa chọn project để thực hiện kiểm thử
+                  Choose a project to run tests on
                 </p>
               </div>
 
               <div className="max-w-md mx-auto space-y-4">
                 <div className="space-y-3">
-                  <Label className="text-base font-medium">Project</Label>
+                  
                   <div className="flex gap-3">
                     <Select
                       value={projectId ? String(projectId) : ""}
                       onValueChange={(v) => setProjectId(Number(v))}
                       disabled={loadingProjects}
                     >
-                      <SelectTrigger className="flex-1 h-12 rounded-xl">
+                      <SelectTrigger className="flex-1 h-12 rounded-xl border-white">
                         <SelectValue
                           placeholder={
-                            loadingProjects ? "Đang tải..." : "Chọn project"
+                            loadingProjects ? "Loading..." : "Select project"
                           }
                         />
                       </SelectTrigger>
@@ -467,7 +493,7 @@ export default function CreateScheduleDialog({
                         <Button
                           variant="outline"
                           size="icon"
-                          className="h-12 w-12 rounded-xl"
+                          className="h-12 w-12 rounded-xl hover:bg-[#658ec7]/10 hover:border-[#658ec7]/50"
                         >
                           <FolderPlus className="w-5 h-5" />
                         </Button>
@@ -477,7 +503,7 @@ export default function CreateScheduleDialog({
                   </div>
 
                   <p className="text-sm text-muted-foreground text-center">
-                    Không thấy project phù hợp? Tạo mới ngay bên cạnh
+                    Don't see the right project? Create a new one
                   </p>
                 </div>
               </div>
@@ -488,11 +514,11 @@ export default function CreateScheduleDialog({
           {step === 3 && (
             <div className="space-y-6">
               <div className="text-center">
-                <h3 className="text-lg font-semibold mb-2">
-                  Cấu hình kiểm thử
+                <h3 className="text-lg font-semibold mb-2 text-[#658ec7]">
+                  Test Configuration
                 </h3>
                 <p className="text-muted-foreground">
-                  Thiết lập các thông số cho{" "}
+                  Configure parameters for{" "}
                   {TEST_TYPE_OPTIONS.find((t) => t.key === subType)?.label}
                 </p>
               </div>
@@ -501,23 +527,23 @@ export default function CreateScheduleDialog({
                 <div className="max-w-2xl mx-auto space-y-6">
                   <div className="grid gap-4 sm:grid-cols-2">
                     <div className="sm:col-span-2 space-y-2">
-                      <Label>API URL</Label>
+                      <Label className="text-[#658ec7]">API URL</Label>
                       <Input
                         placeholder="https://api.example.com/v1/products"
                         value={apiUrl}
                         onChange={(e) => setApiUrl(e.target.value)}
-                        className="h-12 rounded-xl"
+                        className="h-12 rounded-xl  focus:border-[#658ec7] border-white"
                       />
                     </div>
 
                     <div className="space-y-2">
-                      <Label>HTTP Method</Label>
+                      <Label className="text-[#658ec7]">HTTP Method</Label>
                       <Select
                         value={method}
                         onValueChange={(v) => setMethod(v as any)}
                       >
-                        <SelectTrigger className="h-12 rounded-xl">
-                          <SelectValue placeholder="Chọn method" />
+                        <SelectTrigger className="h-12 rounded-xl border-white">
+                          <SelectValue placeholder="Select method" />
                         </SelectTrigger>
                         <SelectContent>
                           {[
@@ -526,8 +552,6 @@ export default function CreateScheduleDialog({
                             "PUT",
                             "DELETE",
                             "PATCH",
-                            "HEAD",
-                            "OPTIONS",
                           ].map((m) => (
                             <SelectItem key={m} value={m}>
                               <Badge variant="outline" className="mr-2">
@@ -541,34 +565,34 @@ export default function CreateScheduleDialog({
 
                     <div className="flex gap-2">
                       <div className="flex-1 space-y-2">
-                        <Label>Virtual Users</Label>
+                        <Label className="text-[#658ec7]">Virtual Users</Label>
                         <Input
                           type="number"
                           placeholder="10"
                           value={vus}
                           onChange={(e) => setVus(e.target.value)}
-                          className="h-12 rounded-xl"
+                          className="h-12 rounded-xl border-white  focus:border-[#658ec7]"
                           min={1}
                         />
                       </div>
                       <div className="flex-1 space-y-2">
-                        <Label>Duration</Label>
+                        <Label className="text-[#658ec7]">Duration</Label>
                         <Input
                           type="number"
                           placeholder="30"
                           value={durationVal}
                           onChange={(e) => setDurationVal(e.target.value)}
-                          className="h-12 rounded-xl"
+                          className="h-12 rounded-xl border-white focus:border-[#658ec7]"
                           min={1}
                         />
                       </div>
                       <div className="w-24 space-y-2">
-                        <Label>Unit</Label>
+                        <Label className="text-[#658ec7]">Unit</Label>
                         <Select
                           value={durationUnit}
                           onValueChange={(v) => setDurationUnit(v as any)}
                         >
-                          <SelectTrigger className="h-12 rounded-xl">
+                          <SelectTrigger className="h-12 rounded-xl border-white">
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
@@ -581,22 +605,22 @@ export default function CreateScheduleDialog({
                     </div>
 
                     <div className="space-y-2">
-                      <Label>Headers (JSON)</Label>
+                      <Label className="text-[#658ec7]">Headers (JSON)</Label>
                       <Textarea
                         placeholder='{ "Authorization": "Bearer xxx" }'
                         value={headersJson}
                         onChange={(e) => setHeadersJson(e.target.value)}
-                        className="rounded-xl min-h-[100px]"
+                        className="rounded-xl min-h-[100px] border-white focus:border-[#658ec7]"
                       />
                     </div>
 
                     <div className="space-y-2">
-                      <Label>Body (JSON)</Label>
+                      <Label className="text-[#658ec7]">Body (JSON)</Label>
                       <Textarea
                         placeholder='{ "name": "product", "price": 99 }'
                         value={bodyJson}
                         onChange={(e) => setBodyJson(e.target.value)}
-                        className="rounded-xl min-h-[100px]"
+                        className="rounded-xl min-h-[100px] border-white focus:border-[#658ec7]"
                       />
                     </div>
                   </div>
@@ -604,34 +628,30 @@ export default function CreateScheduleDialog({
               )}
 
               {subType === "script" && (
-                <div className="max-w-lg mx-auto space-y-6">
+                <div className="max-w-lg mx-auto space-y-6 text-[#658ec7]">
                   <FileUpload
                     accept=".js,.ts"
                     maxSize={5}
                     onFileSelect={setScriptFile}
                     selectedFile={scriptFile}
                     label="K6 Script File"
-                    description="Upload file script k6 (.js)"
-                    placeholder="Chọn script k6"
+                    description="Upload k6 script file (.js)"
+                    placeholder="Choose K6 Script"
                   />
-
-                  
                 </div>
               )}
 
               {subType === "postman" && (
-                <div className="max-w-lg mx-auto space-y-6">
+                <div className="max-w-lg mx-auto space-y-6 text-[#658ec7]">
                   <FileUpload
                     accept=".json"
                     maxSize={10}
                     onFileSelect={setPostmanFile}
                     selectedFile={postmanFile}
                     label="Postman Collection"
-                    description="Upload file collection Postman (.json)"
-                    placeholder="Chọn collection Postman"
+                    description="Upload Postman collection file (.json)"
+                    placeholder="Choose Postman collection"
                   />
-
-                  
                 </div>
               )}
             </div>
@@ -641,19 +661,19 @@ export default function CreateScheduleDialog({
           {step === 4 && (
             <div className="space-y-6">
               <div className="text-center">
-                <h3 className="text-lg font-semibold mb-2">
-                  Thiết lập lịch trình
+                <h3 className="text-lg font-semibold mb-2 text-[#658ec7]">
+                  Schedule Settings
                 </h3>
                 <p className="text-muted-foreground">
-                  Cấu hình thời gian chạy và thông báo email
+                  Configure timing and email notifications
                 </p>
               </div>
 
               <div className="max-w-2xl mx-auto space-y-6">
                 <div className="space-y-3">
-                  <Label className="text-base font-medium flex items-center gap-2">
-                    <Clock className="w-5 h-5 text-primary" />
-                    Lịch chạy tự động
+                  <Label className="text-base font-medium flex items-center gap-2 text-[#658ec7]">
+                    <Clock className="w-5 h-5 text-[#658ec7]" />
+                    Automated Schedule
                   </Label>
                   <CronBuilder
                     value={cronExpression}
@@ -662,20 +682,19 @@ export default function CreateScheduleDialog({
                 </div>
 
                 <div className="space-y-3">
-                  <Label className="text-base font-medium flex items-center gap-2">
-                    <Mail className="w-5 h-5 text-primary" />
-                    Email nhận báo cáo
+                  <Label className="text-base font-medium flex items-center gap-2 text-[#658ec7]">
+                    <Mail className="w-5 h-5 text-[#658ec7]" />
+                    Report Email
                   </Label>
                   <Input
                     type="email"
                     placeholder="your-email@example.com"
                     value={emailTo}
                     onChange={(e) => setEmailTo(e.target.value)}
-                    className="h-12 rounded-xl"
+                    className="h-12 rounded-xl border-white focus:border-[#658ec7]"
                   />
                   <p className="text-sm text-muted-foreground">
-                    Báo cáo kết quả kiểm thử sẽ được gửi đến email này (tùy
-                    chọn)
+                    Test results will be sent to this email
                   </p>
                 </div>
               </div>
@@ -689,9 +708,9 @@ export default function CreateScheduleDialog({
             variant="outline"
             onClick={() => setOpen(false)}
             disabled={submitting}
-            className="rounded-xl"
+            className="rounded-xl text-[#658ec7] hover:text-[#c4a5c2]"
           >
-            Hủy
+            Cancel
           </Button>
 
           <div className="flex gap-3">
@@ -700,10 +719,10 @@ export default function CreateScheduleDialog({
                 variant="ghost"
                 onClick={() => setStep((s) => Math.max(1, s - 1) as any)}
                 disabled={submitting}
-                className="rounded-xl"
+                className="rounded-xl hover:bg-white text-[#658ec7] hover:text-[#c4a5c2]"
               >
                 <ArrowLeft className="w-4 h-4 mr-2" />
-                Quay lại
+                Back
               </Button>
             )}
 
@@ -715,21 +734,21 @@ export default function CreateScheduleDialog({
                   (step === 2 && !canNextFromStep2) ||
                   (step === 3 && !canNextFromStep3)
                 }
-                className="rounded-xl"
+                className="rounded-xl bg-gradient-to-r from-[#658ec7] to-[#c4a5c2] hover:from-[#5a7db5] hover:to-[#b394b0]"
               >
-                Tiếp tục
+                Continue
                 <ArrowRight className="w-4 h-4 ml-2" />
               </Button>
             ) : (
               <Button
                 onClick={handleCreate}
                 disabled={!canCreate || submitting}
-                className="rounded-xl min-w-[120px]"
+                className="rounded-xl min-w-[120px] bg-gradient-to-r from-[#658ec7] to-[#c4a5c2] hover:from-[#5a7db5] hover:to-[#b394b0]"
               >
                 {submitting && (
                   <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                 )}
-                Tạo lịch
+                Create Schedule
               </Button>
             )}
           </div>

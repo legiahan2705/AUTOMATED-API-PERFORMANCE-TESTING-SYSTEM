@@ -15,10 +15,16 @@ import {
   BarChart3,
   Eye,
   EyeOff,
+  Zap,
+  ZapIcon,
+  ChartBarIcon,
+  ChartColumn,
+  ChartColumnIcon,
 } from "lucide-react";
 import { PostmanCharts } from "./PostmanCharts";
 import { QuickCharts } from "./QuickCharts";
 import { ScriptCharts } from "./ScriptCharts";
+import { Chart } from "chart.js";
 
 // ==== Type cho từng loại row ====
 type PostmanDetail = {
@@ -61,7 +67,13 @@ type DetailTableProps = {
 };
 
 const StatusBadge = ({ passed }: { passed: boolean }) => (
-  <Badge variant={passed ? "default" : "destructive"} className="font-medium">
+  <Badge
+    className={`font-medium flex items-center ${
+      passed
+        ? "bg-green-100 text-green-700 border border-green-300"
+        : "bg-red-100 text-red-700 border border-red-300"
+    }`}
+  >
     {passed ? (
       <CheckCircle className="w-3 h-3 mr-1" />
     ) : (
@@ -72,22 +84,23 @@ const StatusBadge = ({ passed }: { passed: boolean }) => (
 );
 
 const MethodBadge = ({ method }: { method: string }) => {
-  const colors = {
-    GET: "bg-success/10 text-success border-success/20",
-    POST: "bg-info/10 text-info border-info/20",
-    PUT: "bg-warning/10 text-warning border-warning/20",
-    DELETE: "bg-destructive/10 text-destructive border-destructive/20",
-    PATCH: "bg-accent/10 text-accent-foreground border-accent/20",
+  const colors: Record<string, string> = {
+    GET: "bg-green-100 text-green-700 border-green-300",
+    POST: "bg-blue-100 text-blue-700 border-blue-300",
+    PUT: "bg-yellow-100 text-yellow-700 border-yellow-300",
+    DELETE: "bg-red-100 text-red-700 border-red-300",
+    PATCH: "bg-purple-100 text-purple-700 border-purple-300",
   };
 
   return (
     <Badge
       variant="outline"
       className={`${
-        colors[method as keyof typeof colors] || colors.GET
+        colors[method.toUpperCase()] ||
+        "bg-gray-100 text-gray-700 border-gray-300"
       } font-medium`}
     >
-      {method}
+      {method.toUpperCase()}
     </Badge>
   );
 };
@@ -105,9 +118,9 @@ export const DetailTable: React.FC<DetailTableProps> = ({
           <div className="rounded-full bg-muted p-4 mb-4">
             <AlertTriangle className="w-8 h-8 text-muted-foreground" />
           </div>
-          <h3 className="text-lg font-semibold mb-2">Không có dữ liệu</h3>
+          <h3 className="text-lg font-semibold mb-2">No Data</h3>
           <p className="text-muted-foreground text-center">
-            Chưa có dữ liệu chi tiết để hiển thị.
+            No detailed data available for this test.
           </p>
         </CardContent>
       </Card>
@@ -138,8 +151,8 @@ export const DetailTable: React.FC<DetailTableProps> = ({
         <Card className="shadow-card-elegant border-1 pb-0">
           <CardHeader className="bg-gradient-info text-info-foreground rounded-t-lg">
             <div className="flex items-center gap-3">
-              <Globe className="w-5 h-5" />
-              <CardTitle className="text-lg font-semibold">
+              <Globe className="w-4 h-4 text-[#658ec7]" />
+              <CardTitle className="text-[18px] font-semibold text-[#658ec7]">
                 Postman Test Results
               </CardTitle>
             </div>
@@ -154,14 +167,14 @@ export const DetailTable: React.FC<DetailTableProps> = ({
                 variant="outline"
                 size="sm"
                 onClick={() => setShowRaw(!showRaw)}
-                className="gap-2"
+                className="gap-2 text-[#658ec7] hover:text-[#c4a5c2]"
               >
                 {showRaw ? (
                   <EyeOff className="w-4 h-4" />
                 ) : (
                   <Eye className="w-4 h-4" />
                 )}
-                {showRaw ? "Ẩn" : "Hiện"} Raw Data
+                {showRaw ? "Hide" : "Show"} Raw Data
               </Button>
             </div>
 
@@ -203,10 +216,15 @@ export const DetailTable: React.FC<DetailTableProps> = ({
                         </td>
                         <td className="p-4">
                           <Badge
-                            variant={
-                              row.status_code < 400 ? "default" : "destructive"
-                            }
-                            className="font-mono"
+                            className={`font-mono ${
+                              row.status_code < 300
+                                ? "bg-green-500 text-white" // 2xx OK → xanh lá
+                                : row.status_code < 400
+                                ? "bg-yellow-500 text-black" // 3xx Redirect → vàng
+                                : row.status_code < 500
+                                ? "bg-red-500 text-white" // 4xx Client Error → đỏ
+                                : "bg-purple-500 text-white" // 5xx Server Error → tím
+                            }`}
                           >
                             {row.status_code}
                           </Badge>
@@ -245,8 +263,8 @@ export const DetailTable: React.FC<DetailTableProps> = ({
         <Card className="shadow-card-elegant border-0">
           <CardHeader className="bg-gradient-primary rounded-t-lg">
             <div className="flex items-center gap-3">
-              <Activity className="w-5 h-5" />
-              <CardTitle className="text-lg font-semibold">
+              <ChartColumnIcon className="w-5 h-5 text-[#658ec7]" />
+              <CardTitle className="text-[18px] font-semibold text-[#658ec7]">
                 Postman Test Charts
               </CardTitle>
             </div>
@@ -268,8 +286,8 @@ export const DetailTable: React.FC<DetailTableProps> = ({
         <Card className="shadow-card-elegant border-0 pb-0">
           <CardHeader className="bg-gradient-info text-info-foreground rounded-t-lg">
             <div className="flex items-center gap-3">
-              <Globe className="w-5 h-5" />
-              <CardTitle className="text-lg font-semibold">
+              <Zap className="w-5 h-5 text-[#658ec7]" />
+              <CardTitle className="text-[18px] font-semibold text-[#658ec7]">
                 Quick Test Results
               </CardTitle>
             </div>
@@ -284,14 +302,14 @@ export const DetailTable: React.FC<DetailTableProps> = ({
                 variant="outline"
                 size="sm"
                 onClick={() => setShowRaw(!showRaw)}
-                className="gap-2"
+                className="gap-2 text-[#658ec7] hover:text-[#c4a5c2]"
               >
                 {showRaw ? (
                   <EyeOff className="w-4 h-4" />
                 ) : (
                   <Eye className="w-4 h-4" />
                 )}
-                {showRaw ? "Ẩn" : "Hiện"} Raw Data
+                {showRaw ? "Hide" : "Show"} Raw Data
               </Button>
             </div>
 
@@ -359,8 +377,16 @@ export const DetailTable: React.FC<DetailTableProps> = ({
           </CardContent>
         </Card>
         {/*  Chart Section */}
-        <Card className="shadow-card-elegant border-0 mt-6">
-          <CardContent>
+        <Card className="shadow-card-elegant border-0 ">
+          <CardHeader className="bg-gradient-primary rounded-t-lg">
+            <div className="flex items-center gap-3">
+              <ChartColumnIcon className="w-5 h-5 text-[#658ec7]" />
+              <CardTitle className="text-[18px] font-semibold text-[#658ec7]">
+                Quick Performance Charts
+              </CardTitle>
+            </div>
+          </CardHeader>
+          <CardContent className="mt-[-10px]">
             <QuickCharts data={details} />
           </CardContent>
         </Card>
@@ -378,14 +404,14 @@ export const DetailTable: React.FC<DetailTableProps> = ({
         <Card className="shadow-card-elegant border-0 pb-0">
           <CardHeader className="bg-gradient-warning text-warning-foreground rounded-t-lg">
             <div className="flex items-center gap-3">
-              <Code2 className="w-5 h-5" />
-              <CardTitle className="text-lg font-semibold">
+              <ZapIcon className="w-5 h-5 text-[#658ec7]" />
+              <CardTitle className="text-[18px] font-semibold text-[#658ec7]">
                 Script Performance Metrics
               </CardTitle>
             </div>
           </CardHeader>
           <CardContent className="p-0">
-            <div className="flex justify-between items-center p-6 bg-table-header border-b border-table-border">
+            <div className="flex justify-between items-center p-6 pt-0 bg-table-header border-b border-table-border">
               <div className="text-sm text-muted-foreground">
                 {metrics.length} performance metric
                 {metrics.length > 1 ? "s" : ""} tracked
@@ -394,22 +420,22 @@ export const DetailTable: React.FC<DetailTableProps> = ({
                 variant="outline"
                 size="sm"
                 onClick={() => setShowRaw(!showRaw)}
-                className="gap-2"
+                className="gap-2 text-[#658ec7] hover:text-[#c4a5c2]"
               >
                 {showRaw ? (
                   <EyeOff className="w-4 h-4" />
                 ) : (
                   <Eye className="w-4 h-4" />
                 )}
-                {showRaw ? "Ẩn" : "Hiện"} Raw Data
+                {showRaw ? "Hide" : "Show"} Raw Data
               </Button>
             </div>
 
-            <div className="overflow-x-auto max-h-[400px] overflow-y-auto">
-              <table className="w-full">
+            <div className="overflow-x-auto max-h-[360px] overflow-y-auto">
+              <table className="w-full table-fixed">
                 <thead className="bg-table-header border-b border-table-border">
                   <tr>
-                    <th className="text-left p-4 font-semibold text-foreground">
+                    <th className="text-left p-4 font-semibold text-foreground w-[200px]">
                       Name
                     </th>
                     <th className="text-left p-4 font-semibold text-foreground">
@@ -439,7 +465,12 @@ export const DetailTable: React.FC<DetailTableProps> = ({
                   {metrics.map((m: ScriptDetail, idx: number) => (
                     <React.Fragment key={idx}>
                       <tr className="hover:bg-table-hover transition-colors border-b border-table-border/50">
-                        <td className="p-4 font-medium">{m.name}</td>
+                        <td
+  className="p-4 font-medium max-w-[200px] truncate"
+  title={m.name}
+>
+  {m.name}
+</td>
                         <td className="p-4 font-mono text-sm">
                           {m.avg || "-"}
                         </td>
@@ -541,8 +572,8 @@ export const DetailTable: React.FC<DetailTableProps> = ({
         <Card className="shadow-card-elegant border-0">
           <CardHeader className="bg-gradient-primary rounded-t-lg">
             <div className="flex items-center gap-3">
-              <Activity className="w-5 h-5" />
-              <CardTitle className="text-lg font-semibold">
+              <ChartColumn className="w-5 h-5 text-[#658ec7]" />
+              <CardTitle className="text-[18px] font-semibold text-[#658ec7]">
                 Script Performance Charts
               </CardTitle>
             </div>

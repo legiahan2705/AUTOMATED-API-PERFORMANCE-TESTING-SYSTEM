@@ -13,10 +13,10 @@ export class PerfQuickResultDetail {
   id: number;
 
   @ManyToOne(() => TestRun, (testRun) => testRun.perfQuickResultDetails, {
-    onDelete: 'CASCADE',
-  })
-  @JoinColumn({ name: 'test_run_id' })
-  testRun: TestRun;
+  onDelete: 'CASCADE',
+})
+@JoinColumn({ name: 'test_run_id' })
+testRun: TestRun;
 
   @Column()
   test_run_id: number;

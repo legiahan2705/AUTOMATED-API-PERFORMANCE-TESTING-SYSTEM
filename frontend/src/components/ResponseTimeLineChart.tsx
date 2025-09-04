@@ -60,13 +60,6 @@ export default function ResponseTimeLineChart({
 
   if (!chartData.length) return <p>No data</p>;
 
-  const OFFSET_B = 200;
-  const offsetData = chartData.map((item) => ({
-    time: item.time,
-    testA: item.testA,
-    testB: item.testB !== undefined ? item.testB + OFFSET_B : undefined,
-  }));
-
   const calculatedWidth = Math.max(
     Math.max(dataA?.length || 0, dataB?.length || 0) * pointSpacing,
     minChartWidth
@@ -81,8 +74,8 @@ export default function ResponseTimeLineChart({
         <LineChart
           width={calculatedWidth}
           height={height}
-          data={offsetData}
-          margin={{ top: 20, right: 30, left: 20, bottom: 40 }} // tăng bottom để tránh che
+          data={chartData} // giữ nguyên data gốc, không offset
+          margin={{ top: 20, right: 30, left: 20, bottom: 40 }}
         >
           <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
           <XAxis
@@ -92,7 +85,7 @@ export default function ResponseTimeLineChart({
             label={{
               value: "Time from start (ms)",
               position: "insideBottom",
-              offset: -5, // đẩy label lên để không bị che
+              offset: -5,
             }}
           />
           <YAxis
@@ -119,7 +112,8 @@ export default function ResponseTimeLineChart({
             dataKey="testB"
             stroke="#06b6d4"
             strokeWidth={3}
-            dot={{ r: 3 }}
+            dot={{ r: 3, stroke: "#fff", strokeWidth: 2 }} // marker dễ phân biệt
+            strokeDasharray="5 5" // line dashed
             name={testNameB}
           />
         </LineChart>

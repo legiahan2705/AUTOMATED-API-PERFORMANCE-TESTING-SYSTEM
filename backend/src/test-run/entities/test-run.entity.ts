@@ -19,7 +19,7 @@ scheduled_test_id: number | null;
 
 
 @ManyToOne(() => ScheduledTest, (scheduledTest) => scheduledTest.testRuns, {
-  onDelete: 'SET NULL',
+  onDelete: 'CASCADE',
 })
 @JoinColumn({ name: 'scheduled_test_id' })
 scheduledTest: ScheduledTest;
@@ -39,7 +39,7 @@ scheduledTest: ScheduledTest;
 
 
   @OneToMany(() => PerfQuickResultDetail, (detail) => detail.testRun, {
-    cascade: true,
+     onDelete: 'CASCADE',
   })
   perfQuickResultDetails: PerfQuickResultDetail[];
 

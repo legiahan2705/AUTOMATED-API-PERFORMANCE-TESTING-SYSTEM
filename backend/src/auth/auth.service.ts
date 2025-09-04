@@ -55,4 +55,28 @@ export class AuthService {
 
     return { message: 'Đổi mật khẩu thành công' };
   }
+
+  // Sửa tên người dùng
+  async updateProfile(userId: number, name: string) {
+    const user = await this.usersRepo.findOne({ where: { id: userId } });
+    if (!user) throw new NotFoundException('Không tìm thấy người dùng');
+    user.name = name;
+    await this.usersRepo.save(user);
+    return { message: 'Cập nhật thông tin thành công' };
+  }
+
+  // Sửa email người dùng
+  async updateEmail(userId: number, newEmail: string) {
+    const user = await this.usersRepo.findOne({ where: { id: userId } });
+    if (!user) throw new NotFoundException('Không tìm thấy người dùng');
+    const emailUsed = await this.usersRepo.findOne({ where: { email: newEmail } });
+    if (emailUsed) throw new BadRequestException('Email đã được sử dụng');
+    user.email = newEmail;
+    await this.usersRepo.save(user);
+    return { message: 'Cập nhật email thành công' };
+  }
+
+
+
+
 }

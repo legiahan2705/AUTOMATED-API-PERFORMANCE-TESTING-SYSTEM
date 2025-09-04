@@ -6,7 +6,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Loader, MoreHorizontal } from "lucide-react";
+import { MoreHorizontal } from "lucide-react";
 import TestDetailDialog from "@/components/TestDetailDialog";
 import CompareTestDialog from "@/components/CompareTestDialog";
 import { useEffect, useState } from "react";
@@ -36,25 +36,53 @@ import {
   ErrorRateFormatter,
   FailRateFormatter,
 } from "@/utils/testFormatters";
-import { IconHistory } from "@tabler/icons-react";
 
 interface TestRun {
   id: number;
   created_at: string;
   sub_type: string;
   summary?: any;
-  gpt_analysis?: string;
+  duration?: number | null;
 }
 
-export default function TestHistorySection({
+interface TestHistoryScheduledProps {
+  projectId?: number;
+  scheduleId?: number;
+  mode: "project" | "schedule";
+  refreshTrigger?: number;
+  // Các props để tùy chỉnh giao diện
+  showTitle?: boolean;
+  showFilters?: boolean;
+  showCompare?: boolean;
+  showActions?: boolean;
+  maxHeight?: string;
+  className?: string;
+  // Để có thể truyền data từ bên ngoài (cho schedule detail)
+  externalData?: TestRun[];
+  loading?: boolean;
+  // Để fix sub_type khi dùng cho schedule (không cần filter)
+  fixedSubType?: string;
+}
+
+export default function TestHistoryScheduled({
   projectId,
-  refreshTrigger,
-}: {
-  projectId: number;
-  refreshTrigger: number;
-}) {
+  scheduleId,
+  mode,
+  refreshTrigger = 0,
+  showTitle = true,
+  showFilters = true,
+  showCompare = true,
+  showActions = true,
+  maxHeight = "280px",
+  className = "",
+  externalData,
+  loading: externalLoading = false,
+  fixedSubType,
+}: TestHistoryScheduledProps) {
   const [testHistory, setTestHistory] = useState<TestRun[]>([]);
-  const [selectedSubType, setSelectedSubType] = useState<string>("postman");
+  const [selectedSubType, setSelectedSubType] = useState<string>(
+    fixedSubType || "postman"
+  );
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
 
   const [openDetail, setOpenDetail] = useState(false);
@@ -62,9 +90,14 @@ export default function TestHistorySection({
 
   const [selectedCompareIds, setSelectedCompareIds] = useState<number[]>([]);
   const [openCompare, setOpenCompare] = useState(false);
+  const [internalLoading, setInternalLoading] = useState(false);
 
-  const testA = testHistory.find((t) => t.id === selectedCompareIds[0]);
-  const testB = testHistory.find((t) => t.id === selectedCompareIds[1]);
+  // Sử dụng external data nếu có, nếu không thì dùng internal state
+  const currentTestHistory = externalData || testHistory;
+  const isLoading = externalLoading || internalLoading;
+
+  const testA = currentTestHistory.find((t) => t.id === selectedCompareIds[0]);
+  const testB = currentTestHistory.find((t) => t.id === selectedCompareIds[1]);
 
   const testATime = testA
     ? new Date(testA.created_at).toLocaleString("vi-VN", {
@@ -89,8 +122,6 @@ export default function TestHistorySection({
         year: "numeric",
       })
     : "";
-
-  const [loading, setLoading] = useState(false);
 
   function toggleCompareSelection(id: number) {
     setSelectedCompareIds((prev) => {
@@ -125,7 +156,9 @@ export default function TestHistorySection({
                 try {
                   await api.get(`/test-runs/${testId}/delete`);
                   toast.success("Đã xoá test thành công.");
-                  fetchTestHistory();
+                  if (!externalData) {
+                    fetchTestHistory();
+                  }
                 } catch {
                   toast.error("Không thể xoá test. Vui lòng thử lại.");
                 }
@@ -147,29 +180,63 @@ export default function TestHistorySection({
     );
   }
 
+  function summaryToMap(summaryArray: any[] = []) {
+    return summaryArray.reduce((acc, item) => {
+      acc[item.name] = item;
+      return acc;
+    }, {} as Record<string, any>);
+  }
+
   useEffect(() => {
-    if (projectId) fetchTestHistory();
-  }, [projectId, selectedSubType, sortOrder, refreshTrigger]);
+    // Chỉ fetch data nội bộ khi không có external data
+    if (
+      !externalData &&
+      ((mode === "project" && projectId) || (mode === "schedule" && scheduleId))
+    ) {
+      fetchTestHistory();
+    }
+  }, [
+    projectId,
+    scheduleId,
+    selectedSubType,
+    sortOrder,
+    refreshTrigger,
+    mode,
+    externalData,
+    fixedSubType,
+  ]);
 
   async function fetchTestHistory() {
+    if (externalData) return; // Không fetch nếu đã có external data
+
+    setInternalLoading(true);
     try {
-      setLoading(true);
-      // Gọi API lấy lịch sử test
+      let endpoint = "";
       const params: any = {
-        projectId,
         sort: sortOrder,
-        sub_type: selectedSubType,
+        sub_type: fixedSubType || selectedSubType,
       };
-      if (["quick", "script"].includes(selectedSubType)) {
+
+      if (mode === "project" && projectId) {
+        endpoint = "/test-runs/history";
+        params.projectId = projectId;
+      } else if (mode === "schedule" && scheduleId) {
+        endpoint = `/test-runs/schedule/${scheduleId}`;
+        // Có thể cần điều chỉnh params cho schedule mode
+      }
+
+      if (["quick", "script"].includes(fixedSubType || selectedSubType)) {
         params.category = "performance";
       }
-      const res = await api.get("/test-runs/history", { params });
+
+      const res = await api.get(endpoint, { params });
       setTestHistory(res.data);
       setSelectedCompareIds([]);
-    } catch {
+    } catch (error) {
+      console.error("Fetch test history error:", error);
       toast.error("Không thể tải lịch sử test.");
     } finally {
-      setLoading(false);
+      setInternalLoading(false);
     }
   }
 
@@ -179,9 +246,10 @@ export default function TestHistorySection({
   }
 
   function renderColumns() {
+    const currentSubType = fixedSubType || selectedSubType;
     return (
       <>
-        {selectedSubType === "quick" && (
+        {currentSubType === "quick" && (
           <>
             <TableHead className="text-center w-[80px]">Requests</TableHead>
             <TableHead className="text-center w-[120px]">
@@ -190,7 +258,7 @@ export default function TestHistorySection({
             <TableHead className="text-center w-[120px]">Error Rate</TableHead>
           </>
         )}
-        {selectedSubType === "script" && (
+        {currentSubType === "script" && (
           <>
             <TableHead className="text-center w-[80px]">Metrics</TableHead>
             <TableHead className="text-center w-[120px]">
@@ -199,7 +267,7 @@ export default function TestHistorySection({
             <TableHead className="text-center w-[120px]">Error Rate</TableHead>
           </>
         )}
-        {selectedSubType === "postman" && (
+        {currentSubType === "postman" && (
           <>
             <TableHead className="text-center w-[80px]">Requests</TableHead>
             <TableHead className="text-center w-[120px]">Duration</TableHead>
@@ -207,15 +275,19 @@ export default function TestHistorySection({
           </>
         )}
 
-        <TableHead className="text-center w-[50px]"></TableHead>
-        <TableHead className="text-center w-[50px]"></TableHead>
+        {showActions && (
+          <TableHead className="text-center w-[50px]"></TableHead>
+        )}
+        {showCompare && (
+          <TableHead className="text-center w-[50px]"></TableHead>
+        )}
       </>
     );
   }
 
   function renderRow(test: TestRun) {
     const checked = selectedCompareIds.includes(test.id);
-    const checkbox = (
+    const checkbox = showCompare ? (
       <TableCell className="text-center">
         <input
           type="checkbox"
@@ -225,9 +297,9 @@ export default function TestHistorySection({
           className="cursor-pointer"
         />
       </TableCell>
-    );
+    ) : null;
 
-    const actions = (
+    const actions = showActions ? (
       <TableCell className="text-center">
         <DropdownMenu>
           <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
@@ -247,7 +319,7 @@ export default function TestHistorySection({
               }}
               className="cursor-pointer hover:bg-[#c4a5c2] hover:text-white"
             >
-              Xem chi tiết
+              View
             </DropdownMenuItem>
             <DropdownMenuItem
               onClick={(e) => {
@@ -256,33 +328,22 @@ export default function TestHistorySection({
               }}
               className="cursor-pointer hover:bg-[#c4a5c2] hover:text-white"
             >
-              Xóa test
+              Delete
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </TableCell>
-    );
+    ) : null;
 
     switch (test.sub_type) {
       case "quick": {
-        const totalReqs = test.summary?.http_reqs?.value ?? 0;
-        const fails = test.summary?.http_req_failed?.fails ?? 0;
-        const p95Val = test.summary?.http_req_duration_p95?.value;
-        const avgVal = test.summary?.http_req_duration_avg?.value;
+        const summaryMap = summaryToMap(test.summary);
 
-        let p95Raw;
-        let p95Formatter;
+        const totalReqs = summaryMap["http_reqs"]?.val ?? 0;
+        const p95Val = summaryMap["http_req_duration_p95"]?.val ?? null;
+        const errorRateRaw = summaryMap["error_rate"]?.val ?? 0;
 
-        if (p95Val != null) {
-          p95Raw = p95Val;
-          p95Formatter = QuickP95Formatter;
-        } else {
-          p95Raw = avgVal;
-          p95Formatter = PostmanDurationFormatter;
-        }
-
-        const p95Parsed = p95Formatter.parse(p95Raw);
-        const errorRateRaw = totalReqs > 0 ? (fails / totalReqs) * 100 : 0;
+        const p95Parsed = QuickP95Formatter.parse(p95Val);
         const errorRateParsed = ErrorRateFormatter.parse(errorRateRaw);
 
         return (
@@ -291,7 +352,7 @@ export default function TestHistorySection({
             <TableCell className="text-center">
               <ColoredCell
                 value={p95Parsed.value}
-                getColor={() => p95Formatter.color(p95Raw)}
+                getColor={() => QuickP95Formatter.color(p95Val)}
                 suffix={p95Parsed.suffix}
               />
             </TableCell>
@@ -344,7 +405,7 @@ export default function TestHistorySection({
 
       case "postman": {
         const requests = test.summary?.total_requests ?? 0;
-        const durRaw = test.summary?.duration_ms ?? null;
+        const durRaw = test.summary?.duration_ms ?? test.duration ?? null;
         const durParsed = PostmanDurationFormatter.parse(durRaw);
         const passes = test.summary?.passes ?? 0;
         const fails = test.summary?.failures ?? 0;
@@ -387,123 +448,150 @@ export default function TestHistorySection({
     }
   }
 
+  // Lọc dữ liệu theo selectedSubType nếu cần
+  const currentSubType = fixedSubType || selectedSubType;
+  const filteredHistory =
+    showFilters && !fixedSubType
+      ? currentTestHistory.filter((test) => test.sub_type === currentSubType)
+      : currentTestHistory;
+
   return (
     <>
-      <div className="mt-6 border rounded-lg p-4 bg-white shadow-sm pl-5 pr-5">
-        <div className="flex justify-between items-center mb-4">
-          <h3 className="flex items-center text-[17px] font-semibold text-[#658ec7] font-[var(--font-nunito)]">
-            <IconHistory className="w-5 h-5 mr-2" />
-            Test History
-          </h3>
-          <div className="flex gap-2 items-center">
-            <Select value={selectedSubType} onValueChange={setSelectedSubType}>
-              <SelectTrigger className="w-[220px]">
-                <SelectValue placeholder="Loại test" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="postman">API (Postman)</SelectItem>
-                <SelectItem value="quick">Quick Performance</SelectItem>
-                <SelectItem value="script">K6 Script Performance</SelectItem>
-              </SelectContent>
-            </Select>
-            <Select
-              value={sortOrder}
-              onValueChange={(val) => setSortOrder(val as "asc" | "desc")}
-            >
-              <SelectTrigger className="w-[150px]">
-                <SelectValue placeholder="Sắp xếp" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="desc">Newest First</SelectItem>
-                <SelectItem value="asc">Oldest First</SelectItem>
-              </SelectContent>
-            </Select>
-            <Button
+      <div
+        className={`border-none shadow-none rounded-none ${className}`}
+      >
+        { (
+          <div className="flex items-end">
+            {showFilters && (
+              <div className="flex gap-2 ">
+                {!fixedSubType && (
+                  <Select
+                    value={selectedSubType}
+                    onValueChange={setSelectedSubType}
+                  >
+                    <SelectTrigger className="w-[220px]">
+                      <SelectValue placeholder="Test Type" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="postman">API (Postman)</SelectItem>
+                      <SelectItem value="quick">Quick Performance</SelectItem>
+                      <SelectItem value="script">
+                        K6 Script Performance
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                )}
+                <Select
+                  value={sortOrder}
+                  onValueChange={(val) => setSortOrder(val as "asc" | "desc")}
+                >
+                  <SelectTrigger className="w-[150px]">
+                    <SelectValue placeholder="Sắp xếp" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="desc">Newest First</SelectItem>
+                    <SelectItem value="asc">Oldest First</SelectItem>
+                  </SelectContent>
+                </Select>
+                {showCompare && (
+                 <Button
               onClick={handleCompare}
               disabled={selectedCompareIds.length !== 2}
-              className="bg-gradient-to-r from-[#658ec7] to-[#c4a5c2] text-white hover:opacity-90 transition"
+              className="bg-gradient-to-r from-[#658ec7] to-[#c4a5c2] text-white hover:opacity-90 transition mb-8"
             >
               Compare
             </Button>
+                )}
+              </div>
+            )}
           </div>
-        </div>
+        )}
 
-        <div className="overflow-y-auto max-h-[280px] scrollbar-clear  ">
-          <Table className="min-w-full table-fixed border-collapse">
-            <TableHeader className="sticky top-0 bg-white shadow">
-              <TableRow>
-                <TableHead className="text-center w-[50px]">#</TableHead>
-                <TableHead className="w-[180px]">Execution Date</TableHead>
-                {renderColumns()}
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {loading ? (
+        {isLoading ? (
+          <div className="flex items-center justify-center py-8">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+            <span className="ml-2">Đang tải...</span>
+          </div>
+        ) : (
+          <div
+            className="overflow-y-auto scrollbar-clear"
+            style={{ maxHeight }}
+          >
+            <Table className="min-w-full table-fixed ">
+              <TableHeader className="sticky top-0 border-none">
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center text-gray-500">
-                    <div className="flex items-center justify-center gap-2 py-4">
-                      <Loader className="w-5 h-5 animate-spin text-[#658ec7]" />
-                      <span>Loading data...</span>
-                    </div>
-                  </TableCell>
+                  <TableHead className="text-center w-[50px]">STT</TableHead>
+                  <TableHead className="w-[180px]">Execution Date</TableHead>
+                  {renderColumns()}
                 </TableRow>
-              ) : testHistory.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={6} className="text-center text-gray-500">
-                    No test data available.
-                  </TableCell>
-                </TableRow>
-              ) : (
-                testHistory.map((test, index) => (
-                  <TableRow
-                    key={test.id}
-                    onClick={() => viewDetail(test.id)}
-                    className="cursor-pointer hover:bg-[#cae0ffb5]"
-                  >
-                    <TableCell className="text-center w-[50px]">
-                      {index + 1}
+              </TableHeader>
+              <TableBody>
+                {filteredHistory.length === 0 ? (
+                  <TableRow>
+                    <TableCell
+                      colSpan={
+                        4 + (showActions ? 1 : 0) + (showCompare ? 1 : 0)
+                      }
+                      className="text-center text-gray-500"
+                    >
+                      Không có dữ liệu test nào.
                     </TableCell>
-                    <TableCell className="w-[180px]">
-                      {new Date(test.created_at).toLocaleString("vi-VN", {
-                        hour12: false,
-                        hour: "2-digit",
-                        minute: "2-digit",
-                        second: "2-digit",
-                        day: "2-digit",
-                        month: "2-digit",
-                        year: "numeric",
-                      })}
-                    </TableCell>
-                    {renderRow(test)}
                   </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-        </div>
+                ) : (
+                  filteredHistory.map((test, index) => (
+                    <TableRow
+                      key={test.id}
+                      onClick={() => viewDetail(test.id)}
+                      className="cursor-pointer hover:bg-[#cae0ffb5]"
+                    >
+                      <TableCell className="text-center w-[50px]">
+                        {index + 1}
+                      </TableCell>
+                      <TableCell className="w-[180px]">
+                        {new Date(test.created_at).toLocaleString("vi-VN", {
+                          hour12: false,
+                          hour: "2-digit",
+                          minute: "2-digit",
+                          second: "2-digit",
+                          day: "2-digit",
+                          month: "2-digit",
+                          year: "numeric",
+                        })}
+                      </TableCell>
+                      {renderRow(test)}
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </div>
+        )}
       </div>
+
       <TestDetailDialog
         open={openDetail}
         onClose={() => setOpenDetail(false)}
         testId={selectedTestId}
       />
 
-      <CompareTestDialog
-        open={openCompare}
-        onOpenChange={setOpenCompare}
-        idA={selectedCompareIds[0]}
-        idB={selectedCompareIds[1]}
-        subType={selectedSubType as "quick" | "postman" | "script"}
-        title={`Compare ${
-          selectedSubType === "quick"
-            ? "Quick Performance Test"
-            : selectedSubType === "postman"
-            ? "API (Postman) Test"
-            : "K6 Script Performance Test"
-        } - ${testATime} vs ${testBTime}`}
-        testATime={testATime}
-        testBTime={testBTime}
-      />
+      {showCompare && (
+        <CompareTestDialog
+          open={openCompare}
+          onOpenChange={setOpenCompare}
+          idA={selectedCompareIds[0]}
+          idB={selectedCompareIds[1]}
+          subType={currentSubType as "quick" | "postman" | "script"}
+          title={`Compare ${
+            currentSubType === "quick"
+              ? "Quick Performance Test"
+              : currentSubType === "postman"
+              ? "API (Postman) Test"
+              : "K6 Script Performance Test"
+          } - ${testATime} vs ${testBTime}`}
+          testATime={testATime}
+          testBTime={testBTime}
+        />
+      )}
     </>
   );
 }

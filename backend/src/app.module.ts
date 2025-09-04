@@ -6,9 +6,10 @@ import { AuthModule } from './auth/auth.module';
 import { ProjectModule } from './project/project.module';
 import { TestRunModule } from './test-run/test-run.module';
 import { TestRunController } from './test-run/test-run.controller';
-import { PdfController } from './pdf/pdf.controller';
-import { PdfModule } from './pdf/pdf.module';
+
 import { ScheduledTestsModule } from './scheduled-test/scheduled-test.module';
+
+import { ReportsModule } from './reports/reports.module';
 
 
 
@@ -42,9 +43,12 @@ import { ScheduledTestsModule } from './scheduled-test/scheduled-test.module';
 
     TestRunModule,
 
+
     // Import PdfModule để tạo báo cáo PDF
-    PdfModule,
-    ScheduledTestsModule
+    
+    ScheduledTestsModule,
+
+    ReportsModule
   ],
 })
 export class AppModule {}

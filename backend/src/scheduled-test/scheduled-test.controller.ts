@@ -1,8 +1,11 @@
-import { Controller, Get, Post, Body, Param, Delete, Put, UseGuards, Req } from '@nestjs/common';
+import { 
+  Controller, Get, Post, Body, Param, Delete, Put, UseGuards, Req, UploadedFile, UseInterceptors 
+} from '@nestjs/common';
 import { JwtAuthGuard } from 'src/auth/jwt-auth.guard'; 
 import { CreateScheduledTestDto } from './dto/create-scheduled-test.dto';
 import { UpdateScheduledTestDto } from './dto/update-scheduled-test.dto';
 import { ScheduledTestsService } from './scheduled-test.service';
+import { FileInterceptor } from '@nestjs/platform-express';
 
 @Controller('scheduled-tests')
 export class ScheduledTestsController {
@@ -10,13 +13,18 @@ export class ScheduledTestsController {
 
   @Post()
   @UseGuards(JwtAuthGuard)
-  async create(@Body() dto: CreateScheduledTestDto, @Req() req: any) {
+  @UseInterceptors(FileInterceptor('file'))
+  async create(
+    @Body() dto: CreateScheduledTestDto,
+    @Req() req: any,
+    @UploadedFile() file?: Express.Multer.File,
+  ) {
     const scheduleData = {
       ...dto,
-      userId: req.user.userId,  // luôn lấy từ JWT
+      userId: req.user.userId,
     };
 
-    return this.scheduledTestsService.create(scheduleData);
+    return this.scheduledTestsService.create(scheduleData, file);
   }
 
   @Get()
@@ -30,9 +38,15 @@ export class ScheduledTestsController {
   }
 
   @Put(':id')
-  update(@Param('id') id: number, @Body() dto: UpdateScheduledTestDto) {
-    return this.scheduledTestsService.update(id, dto);
+  @UseInterceptors(FileInterceptor('file'))
+  update(
+    @Param('id') id: number,
+    @Body() dto: UpdateScheduledTestDto,
+    @UploadedFile() file?: Express.Multer.File,
+  ) {
+    return this.scheduledTestsService.update(id, dto, file);
   }
+
 
   @Delete(':id')
   remove(@Param('id') id: number) {

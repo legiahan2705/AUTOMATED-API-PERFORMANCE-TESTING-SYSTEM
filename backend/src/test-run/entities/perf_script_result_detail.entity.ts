@@ -16,9 +16,11 @@ export class PerfScriptResultDetail {
   @Column()
   test_run_id: number;
 
-  @ManyToOne(() => TestRun)
-  @JoinColumn({ name: 'test_run_id' })
-  testRun: TestRun;
+  @ManyToOne(() => TestRun, {
+  onDelete: 'CASCADE',
+})
+@JoinColumn({ name: 'test_run_id' })
+testRun: TestRun;
 
   @Column()
   type: 'metric' | 'check'; // loại dữ liệu

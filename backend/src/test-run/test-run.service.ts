@@ -195,6 +195,7 @@ export class TestRunService {
             );
 
         return {
+          original_file_name: data.original_file_name || 'Unknown Script',
           metrics_overview: metrics,
           passes: { value: metrics.checks?.passes || 0 },
           failures: { value: metrics.checks?.failures || 0 },
@@ -203,6 +204,7 @@ export class TestRunService {
 
       case 'postman':
         return {
+          collection_name: data.collection_name || "Unknown Collection",
           duration_ms: data.duration_ms ?? 0,
           total_requests: data.total_requests ?? 0,
           passes: data.passes ?? 0,
@@ -258,66 +260,71 @@ export class TestRunService {
   }
 
   async getTestRunDetails(id: number) {
-    const testRun = await this.testRunRepo.findOne({
-      where: { id },
-      relations: ['project'],
-    });
-    if (!testRun) throw new NotFoundException('Không tìm thấy test run.');
+  const testRun = await this.testRunRepo.findOne({
+    where: { id },
+    relations: ['project'],
+  });
+  if (!testRun) throw new NotFoundException('Không tìm thấy test run.');
 
-    let summaryData = null;
-    if (testRun.summary_path) {
-      try {
-        const absSummaryPath = path.resolve(
-          process.cwd(),
-          testRun.summary_path,
-        );
-        if (fs.existsSync(absSummaryPath)) {
-          summaryData = JSON.parse(fs.readFileSync(absSummaryPath, 'utf-8'));
-        }
-      } catch (err) {
-        console.error(`Error reading summary file for test run ${id}:`, err);
+  let rawSummaryData = null;
+  let processedSummaryData = {};
+  
+  if (testRun.summary_path) {
+    try {
+      const absSummaryPath = path.resolve(
+        process.cwd(),
+        testRun.summary_path,
+      );
+      if (fs.existsSync(absSummaryPath)) {
+        rawSummaryData = JSON.parse(fs.readFileSync(absSummaryPath, 'utf-8'));
+        // Process the raw summary data using the existing validation method
+        processedSummaryData = this.validateSummaryByType(testRun.sub_type, rawSummaryData);
       }
+    } catch (err) {
+      console.error(`Error reading summary file for test run ${id}:`, err);
     }
-
-    let rawResultData = null;
-    if (testRun.raw_result_path) {
-      try {
-        const absRawResultPath = path.resolve(
-          process.cwd(),
-          testRun.raw_result_path,
-        );
-        if (fs.existsSync(absRawResultPath)) {
-          rawResultData = JSON.parse(
-            fs.readFileSync(absRawResultPath, 'utf-8'),
-          );
-        }
-      } catch (err) {
-        console.error(`Error reading raw result file for test run ${id}:`, err);
-      }
-    }
-
-    let detailsData: any[] = [];
-    if (testRun.sub_type === 'postman') {
-      detailsData = await this.apiDetailRepo.find({
-        where: { test_run_id: id },
-      });
-    } else if (testRun.sub_type === 'quick') {
-      detailsData = await this.quickDetailRepo.find({
-        where: { testRun: { id } },
-      });
-    } else if (testRun.sub_type === 'script') {
-      detailsData = await this.scriptDetailRepo.find({
-        where: { test_run_id: id },
-      });
-    }
-
-    return {
-      testRun,
-      summary: summaryData || {},
-      details: detailsData,
-      rawResult: rawResultData || {},
-    };
   }
+
+  let rawResultData = null;
+  if (testRun.raw_result_path) {
+    try {
+      const absRawResultPath = path.resolve(
+        process.cwd(),
+        testRun.raw_result_path,
+      );
+      if (fs.existsSync(absRawResultPath)) {
+        rawResultData = JSON.parse(
+          fs.readFileSync(absRawResultPath, 'utf-8'),
+        );
+      }
+    } catch (err) {
+      console.error(`Error reading raw result file for test run ${id}:`, err);
+    }
+  }
+
+  let detailsData: any[] = [];
+  if (testRun.sub_type === 'postman') {
+    detailsData = await this.apiDetailRepo.find({
+      where: { test_run_id: id },
+    });
+  } else if (testRun.sub_type === 'quick') {
+    detailsData = await this.quickDetailRepo.find({
+      where: { testRun: { id } },
+    });
+  } else if (testRun.sub_type === 'script') {
+    detailsData = await this.scriptDetailRepo.find({
+      where: { test_run_id: id },
+    });
+  }
+
+  return {
+    testRun,
+    summary: processedSummaryData,     
+    rawSummary: rawSummaryData || {},  
+    details: detailsData,
+    rawResult: rawResultData || {},
+  };
+}
 
   async compareTests(idA: number, idB: number) {
     const testA = await this.testRunRepo.findOne({ where: { id: idA } });

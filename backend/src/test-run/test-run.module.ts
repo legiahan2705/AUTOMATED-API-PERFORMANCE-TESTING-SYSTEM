@@ -18,23 +18,28 @@ import { K6ScriptTestService } from './services/k6-script-test.service';
 import { TestRunController } from './test-run.controller';
 import { TestRunService } from './test-run.service';
 import { Test } from '@nestjs/testing';
+import { ScheduledTest } from 'src/scheduled-test/entities/scheduled-test.entity';
+import { AiAnalysisModule } from 'src/ai_analysis/ai-analysis.module';
 
 
 @Module({
   imports: [TypeOrmModule.forFeature([
-    TestRun, ApiResultDetail, PerfQuickResultDetail, Project, PerfScriptResultDetail
-  ])],
+    TestRun, ApiResultDetail, PerfQuickResultDetail, Project, PerfScriptResultDetail, ScheduledTest
+  ]) ,AiAnalysisModule,], 
   controllers: [
     PostmanTestController,
     QuickPerformanceTestController, 
     K6ScriptTestController,
-    TestRunController
+    TestRunController,
+  
   ],
   providers: [
     PostmanTestService,
     QuickPerformanceTestService, 
     K6ScriptTestService,
     TestRunService,
+  
   ],
+  exports: [TestRunService],
 })
 export class TestRunModule {}

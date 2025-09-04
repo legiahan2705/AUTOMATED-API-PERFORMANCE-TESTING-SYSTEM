@@ -26,8 +26,11 @@ export class ScheduledTest {
   userId: number;
 
   // Quan hệ tới Test Run
-  @OneToMany(() => TestRun, (testRun) => testRun.scheduledTest)
-  testRuns: TestRun[];
+@OneToMany(() => TestRun, (testRun) => testRun.scheduledTest, {
+  cascade: true,
+  onDelete: 'CASCADE',
+})
+testRuns: TestRun[];
 
   // Quan hệ tới Project
   @ManyToOne(() => Project)
@@ -44,6 +47,10 @@ export class ScheduledTest {
   // Kiểu test con: postman / quick / script
   @Column({ type: 'enum', enum: ['postman', 'quick', 'script'] })
   subType: 'postman' | 'quick' | 'script';
+
+  // Đường dẫn file input do user upload (bắt buộc)
+@Column({ nullable: true })
+inputFilePath?: string;
 
   // Cấu hình test (JSON) lưu lúc tạo lịch
   @Column({ type: 'json', nullable: true })
@@ -62,8 +69,11 @@ export class ScheduledTest {
   lastRunAt: Date;
 
   // Trạng thái kích hoạt
-  @Column({ type: 'tinyint', default: 1 })
-  isActive: number;
+  @Column({ type: 'tinyint', width: 1, default: 1 })
+isActive: boolean;
+
+    @Column({ nullable: true })
+  originalFileName?: string; // Tên file gốc do user upload
 
   @CreateDateColumn()
   createdAt: Date;

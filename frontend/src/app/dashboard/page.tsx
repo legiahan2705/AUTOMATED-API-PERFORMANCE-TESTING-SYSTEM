@@ -63,14 +63,7 @@ export default function Page() {
                       : "shadow-[0_2px_10px_#658ec7]"
                   }`}
                 >
-                  <div className="flex items-center justify-between p-4 rounded-t-lg bg-[#658ec7]">
-                    <h2 className="text-[25px] font-[var(--font-nunito)] font-semibold text-[#ffffff]">
-                      Your projects
-                    </h2>
-                    <p className="text-[18px] text-[#ffffff] font-lora font-semibold">
-                      Click on a project to view details.
-                    </p>
-                  </div>
+                  
 
                   {/* Truyền thêm onDeleted vào ProjectTable */}
                   <div className="mt-4 rounded-b-lg border-0">

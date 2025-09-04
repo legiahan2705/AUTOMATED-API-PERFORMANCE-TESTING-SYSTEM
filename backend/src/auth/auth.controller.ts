@@ -25,4 +25,25 @@ export class AuthController {
   forgotPassword(@Body() dto: ForgotPasswordDto) {
     return this.authService.forgotPassword(dto);
   }
+
+  // Cập nhật thông tin người dùng (tên)
+  @Post('update-profile')
+  updateProfile(
+    @Body('userId') userId: number,
+    @Body('name') name: string,
+  ) {
+    return this.authService.updateProfile(userId, name);
+  }
+
+   // Cập nhật email
+  @Post('update-email')
+  updateEmail(
+    @Body('userId') userId: number,
+    @Body('newEmail') newEmail: string,
+  ) {
+    return this.authService.updateEmail(userId, newEmail);
+  }
+
+
+
 }

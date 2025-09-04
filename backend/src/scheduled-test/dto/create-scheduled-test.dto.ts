@@ -1,4 +1,5 @@
-import { IsEnum, IsInt, IsOptional, IsString, IsEmail } from 'class-validator';
+import { Transform } from 'class-transformer';
+import { IsEnum, IsInt, IsOptional, IsString, IsEmail, ValidateIf, IsBoolean } from 'class-validator';
 
 export class CreateScheduledTestDto {
   @IsInt()
@@ -18,4 +19,14 @@ export class CreateScheduledTestDto {
 
   @IsEmail()
   emailTo: string;
+
+ // Nếu subType khác quick thì bắt buộc có inputFilePath
+  @ValidateIf(o => o.subType !== 'quick')
+  @IsString()
+  inputFilePath: string;
+
+   @IsOptional()
+  @IsBoolean()
+  @Transform(({ value }) => value === 'true' || value === true) // convert string → boolean
+  isActive?: boolean;
 }

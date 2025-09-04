@@ -8,6 +8,9 @@ import { promisify } from 'util';
 import { TestRun } from '../entities/test-run.entity';
 import { PerfScriptResultDetail } from '../entities/perf_script_result_detail.entity';
 import { Project } from 'src/project/entities/project.entity';
+import { ScheduledTest } from 'src/scheduled-test/entities/scheduled-test.entity';
+import { AiAnalysisService } from 'src/ai_analysis/ai-analysis.service';
+
 
 const execAsync = promisify(exec);
 
@@ -22,25 +25,61 @@ export class K6ScriptTestService {
 
     @InjectRepository(Project)
     private projectRepo: Repository<Project>,
+
+    @InjectRepository(ScheduledTest)
+    private scheduledTestRepo: Repository<ScheduledTest>,
+
+    private readonly aiAnalysisService: AiAnalysisService,
   ) {}
 
   /**
-   * Thực hiện chạy K6 performance test dựa trên script của project
+   * Thực hiện chạy K6 performance test dựa trên script của project hoặc scheduled test
+   * - Kiểm tra scheduled test trước, fallback về project nếu cần
    * - Sao chép file script gốc sang thư mục test_inputs
    * - Thực thi lệnh k6 run với tham số xuất summary
    * - Đọc và phân tích kết quả raw, lưu summary ra file
    * - Lưu test run và chi tiết metrics, checks vào database
    * - Xử lý và lưu file log time series nếu có
    * @param projectId - ID project cần chạy test
+   * @param scheduled_test_id - ID scheduled test (optional)
    * @returns test_run_id và summary đã phân tích
    */
-  async runK6ScriptTest(projectId: number , scheduled_test_id?: number) {
-    // Lấy thông tin project, kiểm tra tồn tại file k6 script
+  async runK6ScriptTest(projectId: number, scheduled_test_id?: number) {
     const project = await this.projectRepo.findOne({
       where: { id: projectId },
     });
-    if (!project?.k6ScriptFilePath) {
-      throw new NotFoundException('Project không có file K6 script.');
+    
+    let sourceFilePath: string;
+    let originalFileName: string;
+
+    // Kiểm tra xem có phải là scheduled test không
+    if (scheduled_test_id) {
+      const scheduledTest = await this.scheduledTestRepo.findOne({
+        where: { id: scheduled_test_id },
+      });
+
+      if (!scheduledTest) {
+        throw new NotFoundException(`Scheduled test #${scheduled_test_id} not found.`);
+      }
+
+      // Kiểm tra xem scheduled test có file riêng không
+      if (scheduledTest.inputFilePath && fs.existsSync(scheduledTest.inputFilePath)) {
+        sourceFilePath = scheduledTest.inputFilePath;
+        originalFileName = scheduledTest.originalFileName || path.basename(scheduledTest.inputFilePath);
+      } else if (project?.k6ScriptFilePath) {
+        // Fallback to project file nếu scheduled test không có file
+        sourceFilePath = project.k6ScriptFilePath;
+        originalFileName = project.originalK6ScriptFileName || path.basename(project.k6ScriptFilePath);
+      } else {
+        throw new NotFoundException('Neither scheduled test nor project has K6 script file.');
+      }
+    } else {
+      // Chạy test thông thường từ project
+      if (!project?.k6ScriptFilePath) {
+        throw new NotFoundException('Project không có file K6 script.');
+      }
+      sourceFilePath = project.k6ScriptFilePath;
+      originalFileName = project.originalK6ScriptFileName || path.basename(project.k6ScriptFilePath);
     }
 
     // Hàm hỗ trợ tạo thư mục nếu chưa tồn tại
@@ -62,8 +101,8 @@ export class K6ScriptTestService {
       inputFileName,
     );
 
-    // Sao chép file k6 script gốc sang thư mục test_inputs
-    fs.copyFileSync(project.k6ScriptFilePath, inputPath);
+    // Sao chép file k6 script từ source (có thể từ project hoặc schedule)
+    fs.copyFileSync(sourceFilePath, inputPath);
 
     // Đường dẫn lưu kết quả raw và summary
     const rawResultPath = `uploads/results/performance-k6/testrun_${testRunId}_result.json`;
@@ -82,11 +121,17 @@ export class K6ScriptTestService {
         },
       );
     } catch (err: any) {
-      console.error('Lỗi khi chạy k6:', err);
-      throw err;
+      
+      if (err.code === 99) {
+        console.warn('K6 test completed, but performance thresholds were not met.');
+      } else {
+        // Đối với bất kỳ lỗi nào khác (vd: cú pháp sai, không tìm thấy file), ghi log và throw lỗi.
+        console.error('An unexpected error occurred while running k6:', err);
+        throw err;
+      }
     }
 
-    // Kiểm tra file kết quả raw tồn tại, đọc dữ liệu
+   
     if (!fs.existsSync(rawResultPath)) {
       throw new Error(`Không tìm thấy file kết quả test tại: ${rawResultPath}`);
     }
@@ -94,9 +139,7 @@ export class K6ScriptTestService {
 
     // Phân tích dữ liệu raw thành summary có cấu trúc dễ dùng
     const summary = this.analyzeResult(rawData);
-    summary.original_file_name =
-      project.originalK6ScriptFileName ||
-      path.basename(project.k6ScriptFilePath);
+    summary.original_file_name = originalFileName;
 
     // Ghi summary ra file JSON
     fs.writeFileSync(summaryPath, JSON.stringify(summary, null, 2));
@@ -110,9 +153,9 @@ export class K6ScriptTestService {
       input_file_path: inputPath,
       raw_result_path: rawResultPath,
       summary_path: summaryPath,
-      time_series_path: timeSeriesPath, // Cập nhật thêm trường time_series_path
+      time_series_path: timeSeriesPath,
       config_json: { fileName: inputFileName },
-      original_file_name: summary.original_file_name,
+      original_file_name: originalFileName,
     });
     const savedTestRun = await this.testRunRepo.save(testRun);
 
@@ -210,9 +253,12 @@ export class K6ScriptTestService {
       );
     }
 
+   
+
     return {
       test_run_id: savedTestRun.id,
       summary,
+      ai_analysis: null,
     };
   }
 

@@ -1,13 +1,17 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { TestRun } from '../entities/test-run.entity';
-import { ApiResultDetail } from '../entities/api-result-detail.entity';
 import { Repository } from 'typeorm';
-import * as path from 'path';
+import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import * as fs from 'fs';
+import * as path from 'path';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import { Project } from 'src/project/entities/project.entity';
+import { ScheduledTest } from 'src/scheduled-test/entities/scheduled-test.entity';
+import { ApiResultDetail } from '../entities/api-result-detail.entity';
+import { TestRun } from '../entities/test-run.entity';
+import { AiAnalysisService } from 'src/ai_analysis/ai-analysis.service';
 
 const execAsync = promisify(exec);
 
@@ -22,31 +26,81 @@ export class PostmanTestService {
 
     @InjectRepository(Project)
     private projectRepo: Repository<Project>,
+
+    @InjectRepository(ScheduledTest)
+    private scheduledTestRepo: Repository<ScheduledTest>,
+
+    private readonly aiAnalysisService: AiAnalysisService,
   ) {}
 
-  async runPostmanTest(projectId: number , scheduled_test_id?: number) {
+  async runPostmanTest(projectId: number, scheduled_test_id?: number) {
     const project = await this.projectRepo.findOne({
       where: { id: projectId },
     });
-    if (!project?.postmanFilePath)
-      throw new NotFoundException('Project không có file Postman.');
+    
+    let sourceFilePath: string;
+    let originalFileName: string;
+
+    // Kiểm tra xem có phải là scheduled test không
+    if (scheduled_test_id) {
+      const scheduledTest = await this.scheduledTestRepo.findOne({
+        where: { id: scheduled_test_id },
+      });
+
+      if (!scheduledTest) {
+        throw new NotFoundException(`Scheduled test #${scheduled_test_id} not found.`);
+      }
+
+      // Kiểm tra xem scheduled test có file riêng không
+      if (scheduledTest.inputFilePath && fs.existsSync(scheduledTest.inputFilePath)) {
+        sourceFilePath = scheduledTest.inputFilePath;
+        originalFileName = scheduledTest.originalFileName || path.basename(scheduledTest.inputFilePath);
+      } else if (project?.postmanFilePath) {
+        // Fallback to project file nếu scheduled test không có file
+        sourceFilePath = project.postmanFilePath;
+        originalFileName = project.originalPostmanFileName || path.basename(project.postmanFilePath);
+      } else {
+        throw new NotFoundException('Neither scheduled test nor project has Postman file.');
+      }
+    } else {
+      // Chạy test thông thường từ project
+      if (!project?.postmanFilePath) {
+        throw new NotFoundException('Project không có file Postman.');
+      }
+      sourceFilePath = project.postmanFilePath;
+      originalFileName = project.originalPostmanFileName || path.basename(project.postmanFilePath);
+    }
 
     const testRunId = Date.now();
     const inputFileName = `testrun_${testRunId}.json`;
     const inputPath = path.join('uploads/test_inputs/postman', inputFileName);
 
-    fs.copyFileSync(project.postmanFilePath, inputPath);
+    // Tạo thư mục nếu chưa có
+    const inputDir = path.dirname(inputPath);
+    if (!fs.existsSync(inputDir)) {
+      fs.mkdirSync(inputDir, { recursive: true });
+    }
+
+    // Copy file từ source (có thể từ project hoặc schedule)
+    fs.copyFileSync(sourceFilePath, inputPath);
 
     const rawResultPath = `uploads/results/api/testrun_${testRunId}_result.json`;
     const summaryPath = `uploads/summaries/api/testrun_${testRunId}_summary.json`;
     const timeSeriesDir = 'uploads/time_series/postman';
-    if (!fs.existsSync(timeSeriesDir)) fs.mkdirSync(timeSeriesDir, { recursive: true });
+    
+    // Tạo các thư mục cần thiết
+    [path.dirname(rawResultPath), path.dirname(summaryPath), timeSeriesDir].forEach(dir => {
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+    });
+
     const timeSeriesPath = path.join(timeSeriesDir, `test_${testRunId}_time_series.json`);
 
     const cmd = `npx newman run ${inputPath} -r json --reporter-json-export ${rawResultPath}`;
     await execAsync(cmd);
 
-    // 📊 Lấy time series từ raw Newman
+    // Lấy time series từ raw Newman
     const rawData = JSON.parse(fs.readFileSync(rawResultPath, 'utf-8'));
     const timeSeries = (rawData.run?.executions || []).map(e => ({
       timestamp: new Date().toISOString(),
@@ -60,8 +114,7 @@ export class PostmanTestService {
     console.log('Time series đã được ghi tại:', timeSeriesPath);
 
     const { summary, details } = this.analyzeResult(rawData);
-    summary.original_file_name =
-      project.originalPostmanFileName || path.basename(project.postmanFilePath);
+    summary.original_file_name = originalFileName;
 
     fs.writeFileSync(summaryPath, JSON.stringify(summary, null, 2));
 
@@ -75,7 +128,7 @@ export class PostmanTestService {
       summary_path: summaryPath,
       time_series_path: timeSeriesPath,
       config_json: { fileName: inputFileName },
-      original_file_name: summary.original_file_name,
+      original_file_name: originalFileName,
     });
     const savedTestRun = await this.testRunRepo.save(testRun);
 
@@ -87,9 +140,12 @@ export class PostmanTestService {
     );
     await this.detailRepo.save(entities);
 
+    
+
     return {
       test_run_id: savedTestRun.id,
       summary,
+      ai_analysis: null,
     };
   }
 
@@ -113,6 +169,11 @@ export class PostmanTestService {
       return `${host}/${path}`.replace(/\/$/, '');
     };
 
+    // Tính average response time
+    const executions = raw.run?.executions || [];
+    const totalResponseTime = executions.reduce((sum, e) => sum + (e.response?.responseTime || 0), 0);
+    const avgResponseTime = executions.length > 0 ? totalResponseTime / executions.length : 0;
+
     const summary = {
       collection_name: raw.collection?.info?.name || 'Unnamed Collection',
       total_requests: totalRequests,
@@ -120,7 +181,8 @@ export class PostmanTestService {
       passes: totalAssertions - totalFailures,
       failures: totalFailures,
       duration_ms: durationMs,
-      results: (raw.run?.executions || []).map((e: any) => ({
+      avg_response_time: avgResponseTime,
+      results: executions.map((e: any) => ({
         name: e.item?.name || '',
         method: e.request?.method || '',
         url: buildUrl(e.request?.url),
@@ -136,7 +198,7 @@ export class PostmanTestService {
       original_file_name: '',
     };
 
-    const details = (raw.run?.executions || []).map((exec: any) => ({
+    const details = executions.map((exec: any) => ({
       method: exec.request?.method || '',
       endpoint: exec.item?.name || buildUrl(exec.request?.url),
       status_code: exec.response?.code || null,

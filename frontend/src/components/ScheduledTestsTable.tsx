@@ -49,6 +49,7 @@ import {
   AlertCircle,
   Activity,
 } from "lucide-react";
+import { IconCalendarClock } from "@tabler/icons-react";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:3000";
 
@@ -154,17 +155,18 @@ const getSubtypeIcon = (s: SubType) => {
 
 const statusBadge = (active: boolean) => (
   <Badge
-    variant={active ? "default" : "secondary"}
-    className="flex items-center gap-1.5 font-medium"
+    className={`flex items-center gap-1.5 font-medium text-[15px] ${
+      active ? "bg-[#4d9e62] text-white" : "bg-[#e7e9ecee] text-black "
+    }`}
   >
     {active ? (
       <>
-        <div className="w-2 h-2 rounded-full bg-success animate-pulse" />
+        <div className="w-2 h-2 rounded-full animate-pulse bg-[#34ef7c]" />
         Active
       </>
     ) : (
       <>
-        <div className="w-2 h-2 rounded-full bg-muted-foreground" />
+        <div className="w-2 h-2 rounded-full bg-gray-500 animate-pulse" />
         Paused
       </>
     )}
@@ -287,11 +289,13 @@ export default function ScheduledTestsTable() {
             <div className="flex items-center justify-between border-0">
               <div className="flex items-center gap-3">
                 <div className="w-12 h-12 rounded-xl bg-white/20 flex items-center justify-center">
-                  <Calendar className="w-6 h-6" />
+                  <IconCalendarClock className="w-6 h-6" />
                 </div>
                 <div>
-                  <h2 className="text-2xl font-bold">Scheduled Tests</h2>
-                  <p className="text-white/80">
+                  <h2 className="text-[25px]  font-[var(--font-nunito)] font-bold">
+                    Scheduled Tests
+                  </h2>
+                  <p className="text-white/80 text-[18px] font-lora">
                     Manage and monitor your automated test schedules
                   </p>
                 </div>
@@ -320,27 +324,33 @@ export default function ScheduledTestsTable() {
                   <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                   <Input
                     placeholder="Search by project, type, or ID..."
-                    className="pl-10 md:w-[320px] bg-background/50 border-border/50 focus:bg-background"
+                    className="pl-10 md:w-[320px] bg-background/50 border-border/50 focus:bg-background tẽxt-[15px] placeholder:text-[15px]"
                     value={search}
                     onChange={(e) => onSearchChange(e.target.value)}
                   />
                 </div>
 
                 <div className="relative">
-                  <Filter className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none z-10" />
+                  <Filter className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none " />
                   <Select
                     value={statusFilter}
                     onValueChange={(v: "all" | "active" | "paused") => {
                       setStatusFilter(v);
                     }}
                   >
-                    <SelectTrigger className="w-[180px] pl-10 bg-background/50 border-border/50">
+                    <SelectTrigger className="w-[180px] pl-10 bg-background/50 border-border/50 text-[15px] cursor-pointer">
                       <SelectValue placeholder="Filter by status" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="all">All Statuses</SelectItem>
-                      <SelectItem value="active">Active Only</SelectItem>
-                      <SelectItem value="paused">Paused Only</SelectItem>
+                      <SelectItem value="all" className="cursor-pointer">
+                        All Statuses
+                      </SelectItem>
+                      <SelectItem value="active" className="cursor-pointer">
+                        Active Only
+                      </SelectItem>
+                      <SelectItem value="paused" className="cursor-pointer">
+                        Paused Only
+                      </SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -365,18 +375,28 @@ export default function ScheduledTestsTable() {
 
             {/* Table Container */}
             <div className="  shadow-soft overflow-hidden border-0 p-0">
-              <div className="overflow-auto max-h-[600px] scrollbar-thin scrollbar-track-transparent scrollbar-thumb-border/50">
+              <div className="overflow-auto max-h-[350px] scrollbar-thin scrollbar-track-transparent scrollbar-clear">
                 <Table>
-                  <TableHeader className="sticky top-0  backdrop-blur-sm  z-10">
+                  <TableHeader className="sticky top-0    ">
                     <TableRow>
-                      <TableHead className="w-[80px] text-center font-semibold">
+                      <TableHead className="w-[80px] text-center font-semibold text-[18px] text-[#658ec7]">
                         #
                       </TableHead>
-                      <TableHead className="font-semibold">Project</TableHead>
-                      <TableHead className="font-semibold">Type</TableHead>
-                      <TableHead className="font-semibold">Schedule</TableHead>
-                      <TableHead className="font-semibold">Status</TableHead>
-                      <TableHead className="font-semibold">Last Run</TableHead>
+                      <TableHead className="font-semibold text-[18px] text-[#658ec7]">
+                        Project
+                      </TableHead>
+                      <TableHead className="font-semibold text-[18px] text-[#658ec7]">
+                        Type
+                      </TableHead>
+                      <TableHead className="font-semibold text-[18px] text-[#658ec7]">
+                        Schedule
+                      </TableHead>
+                      <TableHead className="font-semibold text-[18px] text-[#658ec7]">
+                        Status
+                      </TableHead>
+                      <TableHead className="font-semibold text-[18px] text-[#658ec7]">
+                        Last Run
+                      </TableHead>
                     </TableRow>
                   </TableHeader>
 
@@ -443,31 +463,31 @@ export default function ScheduledTestsTable() {
                         return (
                           <TableRow
                             key={s.id}
-                            className="hover:bg-[#cae0ffb5] transition-colors"
+                            className="hover:bg-[#cae0ffb5] transition-colors cursor-pointer"
                             onClick={() => {
                               setSelectedScheduleId(s.id);
                               setDialogOpen(true);
                             }}
                           >
-                            <TableCell className="text-center font-mono text-muted-foreground">
+                            <TableCell className="text-center font-mono text-muted-foreground text-[18px]">
                               {index + 1}
                             </TableCell>
                             <TableCell>
-                              <div className="font-medium">
+                              <div className=" text-[18px]">
                                 {s.project?.name ?? `Project #${s.projectId}`}
                               </div>
                             </TableCell>
                             <TableCell>
-                              <div className="flex items-center gap-2">
+                              <div className="flex items-center gap-2 text-[18px]">
                                 {getSubtypeIcon(s.subType)}
-                                <span className="font-medium">
+                                <span className=" text-[18px]">
                                   {subtypeLabel(s.subType)}
                                 </span>
                               </div>
                             </TableCell>
                             <TableCell>
                               <div className="flex flex-col">
-                                <span className="text-sm text-primary font-medium">
+                                <span className="text-[18px] text-primary ">
                                   {generateHumanReadable(
                                     parseCronExpression(s.cronExpression)
                                   )}
@@ -475,12 +495,14 @@ export default function ScheduledTestsTable() {
                               </div>
                             </TableCell>
 
-                            <TableCell>{statusBadge(active)}</TableCell>
+                            <TableCell className="text-[18px] ">
+                              {statusBadge(active)}
+                            </TableCell>
                             <TableCell>
-                              <div className="text-sm">
+                              <div className="text-[18px]">
                                 {s.lastRunAt ? (
                                   <>
-                                    <div className="font-medium">
+                                    <div>
                                       {formatDistanceToNow(
                                         new Date(s.lastRunAt),
                                         {
@@ -503,39 +525,27 @@ export default function ScheduledTestsTable() {
                             </TableCell>
                             <TableCell>
                               <div className="flex items-center gap-2 justify-center">
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    runNow(s);
-                                  }}
-                                  className="hover:bg-primary hover:text-primary-foreground"
-                                >
-                                  <Play className="w-3 h-3 mr-1" />
-                                  Run
-                                </Button>
-
                                 <AlertDialog>
                                   <AlertDialogTrigger asChild>
                                     <Button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                      }}
                                       size="sm"
                                       variant="outline"
                                       className={
                                         active
-                                          ? "hover:bg-warning hover:text-warning-foreground"
-                                          : "hover:bg-success hover:text-success-foreground"
+                                          ? "hover:bg-[#658ec7] hover:text-warning-foreground cursor-pointer "
+                                          : "hover:bg-[#658ec7] hover:text-success-foreground cursor-pointer"
                                       }
                                     >
                                       {active ? (
                                         <>
-                                          <Pause className="w-3 h-3 mr-1" />
-                                          Pause
+                                          <Pause className="w-3 h-3 text-[18px]" />
                                         </>
                                       ) : (
                                         <>
-                                          <Play className="w-3 h-3 mr-1" />
-                                          Resume
+                                          <Play className="w-3 h-3 text-[18px]" />
                                         </>
                                       )}
                                     </Button>
@@ -554,11 +564,17 @@ export default function ScheduledTestsTable() {
                                       </AlertDialogDescription>
                                     </AlertDialogHeader>
                                     <AlertDialogFooter>
-                                      <AlertDialogCancel>
+                                      <AlertDialogCancel
+                                        onClick={(e) => e.stopPropagation()}
+                                      >
                                         Cancel
                                       </AlertDialogCancel>
                                       <AlertDialogAction
-                                        onClick={() => toggleActive(s)}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          toggleActive(s);
+                                        }}
+                                        className="bg-[#c4a5c2] text-white hover:bg-[#b892b1]"
                                       >
                                         {active ? "Pause" : "Resume"}
                                       </AlertDialogAction>
@@ -569,11 +585,12 @@ export default function ScheduledTestsTable() {
                                 <AlertDialog>
                                   <AlertDialogTrigger asChild>
                                     <Button
+                                      onClick={(e) => e.stopPropagation()}
                                       size="sm"
                                       variant="outline"
-                                      className="hover:bg-destructive hover:text-destructive-foreground"
+                                      className="hover:bg-destructive hover:text-destructive-foreground cursor-pointer"
                                     >
-                                      <Trash2 className="w-3 h-3" />
+                                      <Trash2 className="w-3 h-3 text-[18px]" />
                                     </Button>
                                   </AlertDialogTrigger>
                                   <AlertDialogContent>
@@ -589,11 +606,16 @@ export default function ScheduledTestsTable() {
                                       </AlertDialogDescription>
                                     </AlertDialogHeader>
                                     <AlertDialogFooter>
-                                      <AlertDialogCancel>
+                                      <AlertDialogCancel
+                                        onClick={(e) => e.stopPropagation()}
+                                      >
                                         Cancel
                                       </AlertDialogCancel>
                                       <AlertDialogAction
-                                        onClick={() => deleteSchedule(s.id)}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          deleteSchedule(s.id);
+                                        }}
                                         className="bg-destructive hover:bg-destructive/90"
                                       >
                                         Delete
@@ -616,8 +638,8 @@ export default function ScheduledTestsTable() {
             {data.length > 0 && (
               <div className="mt-6 flex items-center justify-between text-sm text-muted-foreground">
                 <div className="flex items-center gap-4">
-                  <span>Auto-refresh every 30 seconds</span>
-                  <div className="w-2 h-2 rounded-full bg-primary animate-pulse" />
+                  <span className="text-[#658ec7]"> Auto-refresh every 30 seconds</span>
+                  <div className="w-2 h-2 rounded-full bg-[#658ec7] animate-pulse" />
                 </div>
               </div>
             )}
@@ -629,8 +651,6 @@ export default function ScheduledTestsTable() {
         open={dialogOpen}
         onClose={() => setDialogOpen(false)}
         scheduleId={selectedScheduleId}
-       
-        
       />
     </div>
   );

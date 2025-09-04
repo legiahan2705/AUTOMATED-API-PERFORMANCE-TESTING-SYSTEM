@@ -8,6 +8,7 @@ import * as path from 'path';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import { Project } from 'src/project/entities/project.entity';
+import { AiAnalysisService } from 'src/ai_analysis/ai-analysis.service';
 
 const execAsync = promisify(exec);
 
@@ -22,6 +23,8 @@ export class QuickPerformanceTestService {
 
     @InjectRepository(Project)
     private projectRepo: Repository<Project>,
+
+    private readonly aiAnalysisService: AiAnalysisService,
   ) {}
 
   async runQuickTest(projectId: number, scheduled_test_id?: number) {
@@ -71,6 +74,7 @@ export class QuickPerformanceTestService {
       sub_type: 'quick',
       input_file_path: inputPath,
       raw_result_path: resultPath,
+      
       summary_path: summaryPath,
       config_json: config,
     });
@@ -118,7 +122,13 @@ export class QuickPerformanceTestService {
 
     await this.detailRepo.save(details);
 
-    return { test_run_id: saved.id, summary: metricDetails };
+   
+
+    return { 
+      test_run_id: saved.id, 
+      summary: metricDetails,
+      ai_analysis: null,
+    };
   }
 
   private generateK6Script(

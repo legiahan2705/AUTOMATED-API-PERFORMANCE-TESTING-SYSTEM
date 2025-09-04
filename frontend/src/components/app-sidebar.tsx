@@ -3,7 +3,7 @@
 interface AppSidebarProps extends React.ComponentProps<typeof Sidebar> {
   onProjectCreated?: () => void;
   onScrollToProjects?: () => void;
-  onScheduleCreated?: () => void; // thêm ở đây
+  onScheduleCreated?: () => void; 
 }
 
 import * as React from "react";
@@ -12,7 +12,8 @@ import {
   IconFolders,
   IconHelp,
   IconCalendar,
-  IconCalendarClock
+  IconCalendarClock,
+  IconFolderOpen
 } from "@tabler/icons-react";
 
 import { NavMain } from "@/components/nav-main";
@@ -62,7 +63,7 @@ function getNavMain(
     },
     {
       title: "Your projects",
-      icon: IconFolders,
+      icon: IconFolderOpen,
       custom: (item: NavItem) => {
         const Icon = item.icon;
         return (
@@ -86,7 +87,7 @@ function getNavMain(
         const Icon = item.icon;
         return (
           <CreateScheduleDialog
-            onCreated={onScheduleCreated} // dùng ở đây
+            onCreated={onScheduleCreated} 
             trigger={
               <SidebarMenuItem>
                 <SidebarMenuButton
@@ -118,7 +119,7 @@ export const data = {
 export function AppSidebar({
   onProjectCreated,
   onScrollToProjects,
-  onScheduleCreated, // thêm ở đây
+  onScheduleCreated, 
   ...restProps
 }: AppSidebarProps) {
   return (

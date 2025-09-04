@@ -10,7 +10,7 @@ import {
   Legend,
 } from "chart.js";
 import { Bar } from "react-chartjs-2";
-import React from "react";
+import React, { useEffect, useRef } from "react";
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend);
 
@@ -22,12 +22,23 @@ function getRandomColor(index: number) {
   return colors[index % colors.length];
 }
 
-export const PostmanCharts = ({ data }: { data: any[] }) => {
+export const PostmanCharts = ({
+  data,
+  onReady,
+}: {
+  data: any[];
+  onReady?: (imgs: { assertions?: string; response?: string }) => void;
+}) => {
+  const assertionsRef = useRef<any>(null);
+  const responseRef = useRef<any>(null);
+  const hasExported = useRef(false); // chống loop
+
+
   const passCount = data.filter((d) => d.is_passed).length;
   const failCount = data.length - passCount;
 
   const maxAssertions = Math.max(passCount, failCount);
-  const dynamicHeight = Math.min(400 + maxAssertions * 20, 800); // auto scale but limit max
+  const dynamicHeight = Math.min(400 + maxAssertions * 20, 800);
 
   const responseTimeChart = {
     labels: data.map((d) => d.endpoint),
@@ -53,22 +64,42 @@ export const PostmanCharts = ({ data }: { data: any[] }) => {
     ],
   };
 
+  // Xuất base64 chỉ 1 lần
+  useEffect(() => {
+  if (!hasExported.current && (assertionsRef.current || responseRef.current)) {
+    const timeout = setTimeout(() => {
+      const imgs: { assertions?: string; response?: string } = {};
+
+      if (assertionsRef.current) {
+        imgs.assertions = assertionsRef.current.toBase64Image("image/png", 1.0);
+      }
+      if (responseRef.current) {
+        imgs.response = responseRef.current.toBase64Image("image/png", 1.0);
+      }
+
+      if (imgs.assertions || imgs.response) {
+        onReady?.(imgs);
+        hasExported.current = true; // chặn gọi lại
+      }
+    }, 300); //  đợi 300ms cho chart vẽ xong
+
+    return () => clearTimeout(timeout);
+  }
+}, [data, onReady]);
+
   return (
     <div className="grid grid-cols-1 gap-15">
       {/* Assertions */}
       <div style={{ height: `${dynamicHeight}px` }} className="p-4">
         <h4 className="text-base font-semibold mb-3">Assertions Pass vs Fail</h4>
         <Bar
+          ref={assertionsRef}
           data={assertionsChart}
           options={{
             responsive: true,
             maintainAspectRatio: false,
-            plugins: {
-              legend: { display: true },
-            },
-            scales: {
-              y: { beginAtZero: true },
-            },
+            plugins: { legend: { display: true } },
+            scales: { y: { beginAtZero: true } },
           }}
         />
       </div>
@@ -78,6 +109,7 @@ export const PostmanCharts = ({ data }: { data: any[] }) => {
         <h4 className="text-base font-semibold mb-3">Response Time per Request</h4>
         <div style={{ minWidth: `${data.length * 100}px`, height: "500px" }}>
           <Bar
+            ref={responseRef}
             data={responseTimeChart}
             options={{
               responsive: true,
