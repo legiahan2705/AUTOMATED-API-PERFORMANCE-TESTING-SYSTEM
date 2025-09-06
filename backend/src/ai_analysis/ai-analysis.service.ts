@@ -1,8 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import * as fs from 'fs';
 import * as path from 'path';
-import { spawnSync } from 'child_process';
+import Groq from 'groq-sdk';
 
+// ===== Kiểu dữ liệu giữ nguyên =====
 type ParsedPostman = {
   type: 'postman';
   total_requests: number;
@@ -47,78 +48,76 @@ export interface HeuristicOutput {
 }
 
 interface AnalyzeOptions {
-  model?: string;        // default 'mistral'
-  language?: 'vi' | 'en';// default 'en'
-  timeoutMs?: number;    // will be auto-determined based on test type if not provided
-  skipIfUnavailable?: boolean;
+  model?: string;        // default: 'llama-3.1-8b-instant'
+  language?: 'vi' | 'en';// default: 'en'
+  timeoutMs?: number;    // tham khảo, không ảnh hưởng trực tiếp Groq
 }
 
 @Injectable()
 export class AiAnalysisService {
-  // ===== 1) Ollama availability =====
-  private checkOllamaAvailable(): boolean {
-    try {
-      const candidates = process.platform === 'win32' ? ['ollama', 'ollama.exe'] : ['ollama'];
-      for (const cmd of candidates) {
-        const r = spawnSync(cmd, ['--version'], { encoding: 'utf-8', shell: true, timeout: 10000 });
-        if (r.status === 0) return true;
-      }
-      return false;
-    } catch {
-      return false;
-    }
+  private client: Groq;
+
+  constructor() {
+    // Tạo Groq client, dùng API key trong .env
+    this.client = new Groq({ apiKey: process.env.GROQ_API_KEY });
   }
 
-  // ===== 2) Get appropriate timeout based on test type =====
+  // ===== Xác định timeout dựa vào test type =====
   private getTimeoutForTestType(testType: string, customTimeout?: number): number {
     if (customTimeout) return customTimeout;
-    
     switch (testType) {
-      case 'postman':
-        return 300000; 
-      case 'k6_quick':
-        return 600000; // 10 minutes - more complex load tests
-      case 'k6_performance':
-        return 600000; // 10 minutes - most complex performance tests
-      default:
-        return 300000; // 2 minutes default
+      case 'postman': return 300000;
+      case 'k6_quick': return 600000;
+      case 'k6_performance': return 600000;
+      default: return 300000;
     }
   }
 
-  // ===== 3) Public API =====
-  analyzeWithAI(filePath: string, options: AnalyzeOptions = {}) {
-    const { model = 'mistral', language = 'en', skipIfUnavailable = false } = options;
+  // ===== API chính gọi phân tích =====
+  async analyzeWithAI(filePath: string, options: AnalyzeOptions = {}) {
+    // dùng  model llama-3.1-8b-instant (nhanh, ổn định, phù hợp cho phân tích)
+    const { model = 'llama-3.1-8b-instant', language = 'en' } = options;
 
     try {
-      if (!this.checkOllamaAvailable()) {
-        if (skipIfUnavailable) {
-          console.warn('Ollama not available, skipping AI analysis');
-          return null;
-        }
-        throw new Error('Ollama is not installed or not available in PATH. Please install from https://ollama.ai/download');
-      }
-
-      // Load + detect
+      // 1. Đọc file JSON kết quả test
       const raw = fs.readFileSync(path.resolve(filePath), 'utf-8');
       const data = JSON.parse(raw);
+
+      // 2. Parse theo loại test
       const parsed = this.detectAndParse(data);
 
-      // Determine appropriate timeout based on test type
+      // 3. Timeout chỉ để log/meta
       const timeoutMs = this.getTimeoutForTestType(parsed.type, options.timeoutMs);
 
-      // Heuristics (rule-based) before calling AI
+      // 4. Heuristics rule-based
       const heuristics = this.buildHeuristics(parsed);
 
-      // Build prompt in specified language
-      const aiInput = this.buildPrompt(parsed, heuristics);
+      // 5. Prompt cho AI (cải tiến để phù hợp với model mới)
+      const aiInput = this.buildPrompt(parsed, heuristics, language);
 
-      // Call Ollama with appropriate timeout
-      const aiOutput = this.runOllama(aiInput, model, timeoutMs);
+      // 6. Gọi Groq API với model mới
+      const completion = await this.client.chat.completions.create({
+        model,
+        messages: [
+          { 
+            role: 'system', 
+            content: language === 'vi' 
+              ? 'Bạn là chuyên gia QA/Performance Testing. Trả lời rõ ràng và súc tích bằng tiếng Việt.' 
+              : 'You are a QA/Performance expert. Reply clearly and concisely.' 
+          },
+          { role: 'user', content: aiInput },
+        ],
+        temperature: 0.7, // Thêm temperature để có kết quả cân bằng
+        max_tokens: 2048, // Giới hạn token để tối ưu chi phí
+      });
 
+      const aiOutput = completion.choices[0]?.message?.content || '';
+
+      // 7. Trả kết quả
       return {
         aiInput,
         aiOutput,
-        structured: heuristics, // for quick FE display
+        structured: heuristics,
         meta: { model, language, timeoutMs, testType: parsed.type }
       };
     } catch (error: any) {
@@ -127,7 +126,7 @@ export class AiAnalysisService {
     }
   }
 
-  // ===== 4) Detect & parse =====
+  // ===== Detect & parse =====
   private detectAndParse(data: any): Parsed {
     if (data?.metrics && data.metrics.http_req_duration) {
       if (data.metrics.http_req_duration['p(99)']) return this.parseQuick(data) as ParsedK6Quick;
@@ -137,7 +136,7 @@ export class AiAnalysisService {
     throw new Error('Unknown test result format');
   }
 
-  // ===== 5) Heuristics (rule-based) =====
+  // ===== Heuristics =====
   private buildHeuristics(result: Parsed): HeuristicOutput {
     const findings: string[] = [];
     const recommendations: string[] = [];
@@ -223,29 +222,49 @@ export class AiAnalysisService {
     return { status, findings, recommendations };
   }
 
-// ===== 6) Prompt builder =====
-private buildPrompt(result: Parsed, heuristics: HeuristicOutput): string {
-  const langHeader = `You are a QA/Performance expert. Reply clearly and concisely.`;
+  // ===== Prompt builder (cải tiến) =====
+  private buildPrompt(result: Parsed, heuristics: HeuristicOutput, language: 'vi' | 'en' = 'en'): string {
+    const langHeader = language === 'vi' 
+      ? `Bạn là chuyên gia QA/Performance Testing với 10+ năm kinh nghiệm. Phân tích dựa trên số liệu thực tế, không đoán mò.`
+      : `You are a senior QA/Performance expert with 10+ years experience. Base analysis on actual metrics, not assumptions.`;
 
-  const ask = `Analyze the following test results and provide:
-1) Overview & conclusion (pass/fail/warning) with clear justification.
-2) Performance analysis (especially p95/p99/outliers) and stability assessment.
-3) Potential risks/impacts even when no failures are present.
-4) Specific improvement suggestions (prioritized by impact).
-5) Concise actionable checklist for dev/QA teams (bullet points).`;
+    const ask = language === 'vi' 
+      ? `Phân tích kết quả test sau và cung cấp:
+1) **Tổng quan**: Pass/Fail/Warning với căn cứ cụ thể từ số liệu
+2) **Phân tích hiệu năng**: Dùng CHÍNH XÁC các số p95/p99/throughput có trong data (không ước đoán)
+3) **So sánh benchmark**: Response time có chấp nhận được? (web: <200ms, API: <500ms, batch: <2s)
+4) **Rủi ro thực tế**: Tác động lên user experience và business
+5) **Khuyến nghị ưu tiên**: Top 3 actions quan trọng nhất
+6) **Checklist hành động**: 5-7 items cụ thể cho dev/QA`
+      : `Analyze test results and provide:
+1) **Overview**: Pass/Fail/Warning with specific evidence from metrics
+2) **Performance Analysis**: Use EXACT p95/p99/throughput numbers from data (no guessing)
+3) **Benchmark Comparison**: Are response times acceptable? (web: <200ms, API: <500ms, batch: <2s)
+4) **Real Risks**: Impact on user experience and business
+5) **Priority Recommendations**: Top 3 most critical actions
+6) **Action Checklist**: 5-7 specific items for dev/QA teams`;
 
-  const heuristicsText = `=== AUTOMATIC HEURISTICS ===
-- Status: ${heuristics.status}
-- Findings: ${heuristics.findings.join(' | ')}
-- Quick Recommendations: ${heuristics.recommendations.join(' | ')}
+    const heuristicsText = language === 'vi'
+      ? `=== PHÂN TÍCH TỰ ĐỘNG ===
+Trạng thái: ${heuristics.status}
+Phát hiện: ${heuristics.findings.join(' | ')}
+Khuyến nghị: ${heuristics.recommendations.join(' | ')}
+
+`
+      : `=== AUTO ANALYSIS ===
+Status: ${heuristics.status}
+Findings: ${heuristics.findings.join(' | ')}
+Recommendations: ${heuristics.recommendations.join(' | ')}
 
 `;
 
-  const raw = this.formatRawBlock(result);
+    const raw = this.formatRawBlock(result);
 
-  const footer = `Note: Don't just repeat numbers, extract practical insights and recommendations. If data is limited, suggest ways to increase conclusion reliability.`;
+    const footer = language === 'vi'
+      ? `🎯 QUAN TRỌNG: Chỉ sử dụng số liệu có sẵn trong RAW DATA. Không đoán p95/p99 nếu không có. Đưa ra con số cụ thể và so sánh với industry standard.`
+      : `🎯 CRITICAL: Only use metrics available in RAW DATA. Don't guess p95/p99 if not provided. Give specific numbers and compare with industry standards.`;
 
-  return `${langHeader}
+    return `${langHeader}
 
 ${ask}
 
@@ -253,14 +272,13 @@ ${heuristicsText}=== RAW TEST DATA ===
 ${raw}
 
 ${footer}`;
-}
+  }
 
-  // ===== 7) Raw block (keep clean, readable) =====
+  // ===== Raw block formatter =====
   private formatRawBlock(result: Parsed): string {
     let text = `Test Type: ${result.type}\n`;
 
     if (result.type.startsWith('k6')) {
-      // common for k6
       const r: any = result;
       if (r.requests !== undefined) text += `Requests: ${r.requests}\n`;
       if (r.vus !== undefined) text += `VUs: ${r.vus}\n`;
@@ -314,29 +332,7 @@ ${footer}`;
     return text;
   }
 
-  // ===== 8) Run Ollama =====
-  private runOllama(input: string, model: string, timeoutMs: number): string {
-    const ollamaCmd = process.platform === 'win32' ? 'ollama' : 'ollama';
-    const result = spawnSync(ollamaCmd, ['run', model], {
-      input,
-      encoding: 'utf-8',
-      timeout: timeoutMs,
-      shell: true,
-    });
-
-    if (result.error) {
-      throw new Error(`Ollama execution failed: ${result.error.message}`);
-    }
-    if (result.status !== 0) {
-      const err = result.stderr ? result.stderr.toString() : 'Unknown error';
-      throw new Error(`Ollama exited with code ${result.status}: ${err}`);
-    }
-    const out = result.stdout ? result.stdout.toString().trim() : '';
-    if (!out) throw new Error('Ollama returned empty output');
-    return out;
-  }
-
-  // ===== 9) Parsers (keep original logic + minor tweaks) =====
+  // ===== Parsers =====
   private parseQuick(data: any): ParsedK6Quick {
     const metrics = data.metrics || {};
     return {
@@ -371,7 +367,6 @@ ${footer}`;
     const failedDetails =
       executions
         ?.filter((ex: any) => {
-          // broader fail condition: code >=400 or assertion fail
           const code = ex.response?.code;
           const assertionFailed = (ex.assertions || []).some((a: any) => a.error);
           return (typeof code === 'number' && code >= 400) || assertionFailed;

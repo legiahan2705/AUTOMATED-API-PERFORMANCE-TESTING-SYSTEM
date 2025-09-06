@@ -6,17 +6,19 @@ export class AiAnalysisController {
   constructor(private readonly aiAnalysisService: AiAnalysisService) {}
 
   @Get()
-analyze(
-  @Query('file') filePath: string
-): { aiInput: string; aiOutput: string; structured: HeuristicOutput; meta: any } | { error: string } | null {
-  if (!filePath) {
-    return { error: 'Missing file query param' };
+  async analyze(
+    @Query('file') filePath: string
+  ): Promise<
+    { aiInput: string; aiOutput: string; structured: HeuristicOutput; meta: any } |
+    { error: string }
+  > {
+    if (!filePath) {
+      return { error: 'Missing file query param' };
+    }
+    try {
+      return await this.aiAnalysisService.analyzeWithAI(filePath);
+    } catch (err: any) {
+      return { error: err.message };
+    }
   }
-  try {
-    return this.aiAnalysisService.analyzeWithAI(filePath);
-  } catch (err: any) {
-    return { error: err.message };
-  }
-}
-
 }
