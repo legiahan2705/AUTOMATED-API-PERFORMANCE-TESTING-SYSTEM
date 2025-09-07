@@ -8,6 +8,7 @@ import { ScheduledTestsController } from './scheduled-test.controller';
 import { ReportsModule } from 'src/reports/reports.module';
 import { TestRunModule } from 'src/test-run/test-run.module';
 import { EmailModule } from 'src/email/email.module';
+import { GcsService } from 'src/project/gcs.service';
 
 @Module({
   imports: [
@@ -20,7 +21,7 @@ import { EmailModule } from 'src/email/email.module';
 
   ],
   controllers: [ScheduledTestsController],
-  providers: [ScheduledTestsService],
+  providers: [ScheduledTestsService, GcsService],
   exports: [ScheduledTestsService],
 })
 export class ScheduledTestsModule implements OnModuleInit {
