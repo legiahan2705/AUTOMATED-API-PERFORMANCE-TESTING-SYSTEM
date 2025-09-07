@@ -6,10 +6,7 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
   app.enableCors({
-  origin: [
-    "http://localhost:3001", // cho dev local
-    "https://automated-api-performance-testing-s.vercel.app" // FE deploy trên Vercel
-  ],
+  origin: 'https://automated-api-performance-testing-s.vercel.app',
   credentials: true,
 });
 
