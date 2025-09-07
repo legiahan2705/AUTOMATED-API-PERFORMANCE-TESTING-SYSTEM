@@ -8,9 +8,7 @@ import { Repository } from 'typeorm';
 import { Project } from './entities/project.entity';
 import { CreateProjectDto } from './dto/create-project.dto';
 import { User } from 'src/auth/entities/user.entity';
-
-import * as fs from 'fs';
-import * as path from 'path';
+import { GcsService } from './gcs.service';
 
 @Injectable()
 export class ProjectService {
@@ -20,11 +18,12 @@ export class ProjectService {
 
     @InjectRepository(User)
     private readonly userRepo: Repository<User>,
+
+    private readonly gcsService: GcsService,
   ) {}
 
   /**
    * Tạo project mới cho user kèm theo file Postman và K6 (nếu có)
-   * Kiểm tra user tồn tại và tên project không bị trùng trong cùng một user
    */
   async create(createProjectDto: CreateProjectDto, userId: number) {
     // Kiểm tra user tồn tại
@@ -46,18 +45,11 @@ export class ProjectService {
       throw new BadRequestException('Project with this name already exists.');
     }
 
-    // Chuẩn hóa đường dẫn (nếu có)
-    const fixedPostmanPath = createProjectDto.postmanFilePath?.replace(
-      /\\/g,
-      '/',
-    );
-    const fixedK6Path = createProjectDto.k6ScriptFilePath?.replace(/\\/g, '/');
-
-    // Tạo và lưu project
+    // Tạo và lưu project với GCS paths
     const newProject = this.projectRepo.create({
       ...createProjectDto,
-      postmanFilePath: fixedPostmanPath, // dùng path đã chuẩn hóa
-      k6ScriptFilePath: fixedK6Path, // dùng path đã chuẩn hóa
+      postmanFilePath: createProjectDto.postmanFilePath, // GCS path
+      k6ScriptFilePath: createProjectDto.k6ScriptFilePath, // GCS path
       originalPostmanFileName: createProjectDto.originalPostmanFileName,
       originalK6ScriptFileName: createProjectDto.originalK6ScriptFileName,
       headers: createProjectDto.headers,
@@ -87,7 +79,7 @@ export class ProjectService {
         id: projectId,
         user: { id: userId },
       },
-      relations: ['user', 'testRuns'], // Lấy luôn testRuns để biết mấy file liên quan
+      relations: ['user', 'testRuns'],
     });
 
     if (!project) {
@@ -96,26 +88,31 @@ export class ProjectService {
       );
     }
 
-    // XÓA FILE CHÍNH của project (Postman, K6)
-    const filePaths = [project.postmanFilePath, project.k6ScriptFilePath];
+    // XÓA FILE CHÍNH của project từ GCS
+    const filesToDelete = [
+      project.postmanFilePath,
+      project.k6ScriptFilePath,
+    ].filter(Boolean);
 
-    // XÓA FILE test input/result/summary của từng test run
+    // XÓA FILE test input/result/summary của từng test run từ GCS
     if (project.testRuns) {
       for (const testRun of project.testRuns) {
-        filePaths.push(testRun.input_file_path);
-        filePaths.push(testRun.raw_result_path);
-        filePaths.push(testRun.summary_path);
+        [
+          testRun.input_file_path,
+          testRun.raw_result_path,
+          testRun.summary_path,
+        ]
+          .filter(Boolean)
+          .forEach(path => filesToDelete.push(path));
       }
     }
 
-    // Thực hiện xóa file (nếu tồn tại)
-    for (const file of filePaths) {
-      if (file && fs.existsSync(file)) {
-        try {
-          fs.unlinkSync(file);
-        } catch (err) {
-          console.warn('Không thể xóa file:', file, err.message);
-        }
+    // Thực hiện xóa files từ GCS
+    for (const filePath of filesToDelete) {
+      try {
+        await this.gcsService.deleteFile(filePath);
+      } catch (err) {
+        console.warn('Không thể xóa file từ GCS:', filePath, err.message);
       }
     }
 
@@ -125,8 +122,9 @@ export class ProjectService {
     return { message: 'Project deleted successfully (and related files)' };
   }
 
-  //  hàm updateProject
-
+  /**
+   * Cập nhật project
+   */
   async updateProject(
     projectId: number,
     userId: number,
@@ -146,32 +144,28 @@ export class ProjectService {
       );
     }
 
-    // XÓA FILE CŨ nếu có upload file mới
-    if (
-      data.postmanFilePath &&
-      project.postmanFilePath &&
-      fs.existsSync(project.postmanFilePath)
-    ) {
-      fs.unlink(project.postmanFilePath, (err) => {
-        if (err) console.warn('Không thể xóa file Postman cũ:', err.message);
-      });
+    // XÓA FILE CŨ từ GCS nếu có upload file mới
+    if (data.postmanFilePath && project.postmanFilePath) {
+      try {
+        await this.gcsService.deleteFile(project.postmanFilePath);
+      } catch (err) {
+        console.warn('Không thể xóa file Postman cũ từ GCS:', err.message);
+      }
     }
 
-    if (
-      data.k6ScriptFilePath &&
-      project.k6ScriptFilePath &&
-      fs.existsSync(project.k6ScriptFilePath)
-    ) {
-      fs.unlink(project.k6ScriptFilePath, (err) => {
-        if (err) console.warn('Không thể xóa file K6 cũ:', err.message);
-      });
+    if (data.k6ScriptFilePath && project.k6ScriptFilePath) {
+      try {
+        await this.gcsService.deleteFile(project.k6ScriptFilePath);
+      } catch (err) {
+        console.warn('Không thể xóa file K6 cũ từ GCS:', err.message);
+      }
     }
 
-    // Cập nhật các trường text và file
+    // Cập nhật các trường
     Object.assign(project, {
       ...data,
-      postmanFilePath: data.postmanFilePath?.replace(/\\/g, '/'),
-      k6ScriptFilePath: data.k6ScriptFilePath?.replace(/\\/g, '/'),
+      postmanFilePath: data.postmanFilePath || project.postmanFilePath,
+      k6ScriptFilePath: data.k6ScriptFilePath || project.k6ScriptFilePath,
       originalPostmanFileName:
         data.originalPostmanFileName || project.originalPostmanFileName,
       originalK6ScriptFileName:

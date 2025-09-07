@@ -5,8 +5,7 @@ import { TestRun } from './entities/test-run.entity';
 import { ApiResultDetail } from './entities/api-result-detail.entity';
 import { PerfQuickResultDetail } from './entities/perf_quick_result_detail.entity';
 import { PerfScriptResultDetail } from './entities/perf_script_result_detail.entity';
-import * as path from 'path';
-import * as fs from 'fs';
+import { GcsService } from 'src/project/gcs.service';
 
 @Injectable()
 export class TestRunService {
@@ -22,6 +21,8 @@ export class TestRunService {
 
     @InjectRepository(PerfScriptResultDetail)
     private scriptDetailRepo: Repository<PerfScriptResultDetail>,
+
+    private readonly gcsService: GcsService,
   ) {}
 
   async getHistory(
@@ -47,13 +48,15 @@ export class TestRunService {
         let rawSummary = {};
         let rawResult = {};
 
-        if (testRun.summary_path && fs.existsSync(testRun.summary_path)) {
+        // Read summary from GCS
+        if (testRun.summary_path) {
           try {
-            const rawData = JSON.parse(
-              fs.readFileSync(testRun.summary_path, 'utf-8'),
-            );
-            rawSummary = rawData;
-            summaryData = this.validateSummaryByType(testRun.sub_type, rawData);
+            const fileExists = await this.gcsService.fileExists(testRun.summary_path);
+            if (fileExists) {
+              const rawData = await this.gcsService.readFile(testRun.summary_path);
+              rawSummary = JSON.parse(rawData);
+              summaryData = this.validateSummaryByType(testRun.sub_type, rawSummary);
+            }
           } catch (e) {
             console.error(
               `Error parsing summary for test run ${testRun.id}:`,
@@ -62,11 +65,14 @@ export class TestRunService {
           }
         }
 
-        if (testRun.raw_result_path && fs.existsSync(testRun.raw_result_path)) {
+        // Read raw result from GCS
+        if (testRun.raw_result_path) {
           try {
-            rawResult = JSON.parse(
-              fs.readFileSync(testRun.raw_result_path, 'utf-8'),
-            );
+            const fileExists = await this.gcsService.fileExists(testRun.raw_result_path);
+            if (fileExists) {
+              const rawData = await this.gcsService.readFile(testRun.raw_result_path);
+              rawResult = JSON.parse(rawData);
+            }
           } catch (e) {
             console.error(
               `Error parsing raw result for test run ${testRun.id}:`,
@@ -222,6 +228,7 @@ export class TestRunService {
       throw new NotFoundException('Không tìm thấy test run để xoá.');
     }
 
+    // Delete database records based on sub_type
     switch (testRun.sub_type) {
       case 'postman':
         await this.apiDetailRepo.delete({ test_run_id: id });
@@ -234,6 +241,7 @@ export class TestRunService {
         break;
     }
 
+    // Delete files from GCS
     const filePaths = [
       testRun.input_file_path,
       testRun.raw_result_path,
@@ -241,90 +249,87 @@ export class TestRunService {
       testRun.time_series_path,
     ];
 
-    for (const p of filePaths) {
-      if (p) {
+    for (const gcsPath of filePaths) {
+      if (gcsPath) {
         try {
-          const absPath = path.resolve(process.cwd(), p);
-          if (fs.existsSync(absPath)) {
-            await fs.promises.unlink(absPath);
-            console.log(`Deleted file ${absPath}`);
+          const fileExists = await this.gcsService.fileExists(gcsPath);
+          if (fileExists) {
+            await this.gcsService.deleteFile(gcsPath);
+            console.log(`Deleted GCS file: ${gcsPath}`);
           }
         } catch (err) {
-          console.error(`Failed to delete file ${p}:`, err);
+          console.error(`Failed to delete GCS file ${gcsPath}:`, err);
         }
       }
     }
 
+    // Delete test run record
     await this.testRunRepo.delete(id);
     return { message: 'Xoá test run thành công.' };
   }
 
   async getTestRunDetails(id: number) {
-  const testRun = await this.testRunRepo.findOne({
-    where: { id },
-    relations: ['project'],
-  });
-  if (!testRun) throw new NotFoundException('Không tìm thấy test run.');
+    const testRun = await this.testRunRepo.findOne({
+      where: { id },
+      relations: ['project'],
+    });
+    if (!testRun) throw new NotFoundException('Không tìm thấy test run.');
 
-  let rawSummaryData = null;
-  let processedSummaryData = {};
-  
-  if (testRun.summary_path) {
-    try {
-      const absSummaryPath = path.resolve(
-        process.cwd(),
-        testRun.summary_path,
-      );
-      if (fs.existsSync(absSummaryPath)) {
-        rawSummaryData = JSON.parse(fs.readFileSync(absSummaryPath, 'utf-8'));
-        // Process the raw summary data using the existing validation method
-        processedSummaryData = this.validateSummaryByType(testRun.sub_type, rawSummaryData);
+    let rawSummaryData = null;
+    let processedSummaryData = {};
+    
+    // Read summary from GCS
+    if (testRun.summary_path) {
+      try {
+        const fileExists = await this.gcsService.fileExists(testRun.summary_path);
+        if (fileExists) {
+          const rawData = await this.gcsService.readFile(testRun.summary_path);
+          rawSummaryData = JSON.parse(rawData);
+          processedSummaryData = this.validateSummaryByType(testRun.sub_type, rawSummaryData);
+        }
+      } catch (err) {
+        console.error(`Error reading summary file for test run ${id}:`, err);
       }
-    } catch (err) {
-      console.error(`Error reading summary file for test run ${id}:`, err);
     }
-  }
 
-  let rawResultData = null;
-  if (testRun.raw_result_path) {
-    try {
-      const absRawResultPath = path.resolve(
-        process.cwd(),
-        testRun.raw_result_path,
-      );
-      if (fs.existsSync(absRawResultPath)) {
-        rawResultData = JSON.parse(
-          fs.readFileSync(absRawResultPath, 'utf-8'),
-        );
+    let rawResultData = null;
+    // Read raw result from GCS
+    if (testRun.raw_result_path) {
+      try {
+        const fileExists = await this.gcsService.fileExists(testRun.raw_result_path);
+        if (fileExists) {
+          const rawData = await this.gcsService.readFile(testRun.raw_result_path);
+          rawResultData = JSON.parse(rawData);
+        }
+      } catch (err) {
+        console.error(`Error reading raw result file for test run ${id}:`, err);
       }
-    } catch (err) {
-      console.error(`Error reading raw result file for test run ${id}:`, err);
     }
-  }
 
-  let detailsData: any[] = [];
-  if (testRun.sub_type === 'postman') {
-    detailsData = await this.apiDetailRepo.find({
-      where: { test_run_id: id },
-    });
-  } else if (testRun.sub_type === 'quick') {
-    detailsData = await this.quickDetailRepo.find({
-      where: { testRun: { id } },
-    });
-  } else if (testRun.sub_type === 'script') {
-    detailsData = await this.scriptDetailRepo.find({
-      where: { test_run_id: id },
-    });
-  }
+    // Get details data from database
+    let detailsData: any[] = [];
+    if (testRun.sub_type === 'postman') {
+      detailsData = await this.apiDetailRepo.find({
+        where: { test_run_id: id },
+      });
+    } else if (testRun.sub_type === 'quick') {
+      detailsData = await this.quickDetailRepo.find({
+        where: { testRun: { id } },
+      });
+    } else if (testRun.sub_type === 'script') {
+      detailsData = await this.scriptDetailRepo.find({
+        where: { test_run_id: id },
+      });
+    }
 
-  return {
-    testRun,
-    summary: processedSummaryData,     
-    rawSummary: rawSummaryData || {},  
-    details: detailsData,
-    rawResult: rawResultData || {},
-  };
-}
+    return {
+      testRun,
+      summary: processedSummaryData,     
+      rawSummary: rawSummaryData || {},  
+      details: detailsData,
+      rawResult: rawResultData || {},
+    };
+  }
 
   async compareTests(idA: number, idB: number) {
     const testA = await this.testRunRepo.findOne({ where: { id: idA } });
@@ -453,10 +458,10 @@ export class TestRunService {
       };
     }
 
-    // Load line chart data nếu là postman hoặc script
+    // Load line chart data nếu là postman hoặc script từ GCS
     if (['postman', 'script'].includes(testA.sub_type)) {
-      lineChartDataA = this.readTimeSeriesFile(testA.time_series_path);
-      lineChartDataB = this.readTimeSeriesFile(testB.time_series_path);
+      lineChartDataA = await this.readTimeSeriesFile(testA.time_series_path);
+      lineChartDataB = await this.readTimeSeriesFile(testB.time_series_path);
     }
 
     return {
@@ -471,75 +476,74 @@ export class TestRunService {
     const testRun = await this.testRunRepo.findOne({ where: { id } });
     if (!testRun?.raw_result_path) return null;
 
-    const absolutePath = path.resolve(process.cwd(), testRun.raw_result_path);
-    return fs.existsSync(absolutePath) ? absolutePath : null;
+    const fileExists = await this.gcsService.fileExists(testRun.raw_result_path);
+    return fileExists ? testRun.raw_result_path : null;
   }
 
   async getSummaryPath(id: number): Promise<string | null> {
     const testRun = await this.testRunRepo.findOne({ where: { id } });
     if (!testRun?.summary_path) return null;
 
-    const absolutePath = path.resolve(process.cwd(), testRun.summary_path);
-    return fs.existsSync(absolutePath) ? absolutePath : null;
+    const fileExists = await this.gcsService.fileExists(testRun.summary_path);
+    return fileExists ? testRun.summary_path : null;
   }
 
   async getInputFilePath(id: number): Promise<string | null> {
     const testRun = await this.testRunRepo.findOne({ where: { id } });
     if (!testRun?.input_file_path) return null;
 
-    const absolutePath = path.resolve(process.cwd(), testRun.input_file_path);
-    return fs.existsSync(absolutePath) ? absolutePath : null;
+    const fileExists = await this.gcsService.fileExists(testRun.input_file_path);
+    return fileExists ? testRun.input_file_path : null;
   }
 
   async getTimeSeriesPath(id: number): Promise<string | null> {
     const testRun = await this.testRunRepo.findOne({ where: { id } });
     if (!testRun?.time_series_path) return null;
 
-    const absolutePath = path.resolve(process.cwd(), testRun.time_series_path);
-    return fs.existsSync(absolutePath) ? absolutePath : null;
+    const fileExists = await this.gcsService.fileExists(testRun.time_series_path);
+    return fileExists ? testRun.time_series_path : null;
   }
 
-  private readTimeSeriesFile(filePath?: string): any[] | null {
-  if (!filePath) return null;
+  private async readTimeSeriesFile(gcsPath?: string): Promise<any[] | null> {
+    if (!gcsPath) return null;
 
-  const absPath = path.resolve(process.cwd(), filePath);
-  if (!fs.existsSync(absPath)) return null;
+    try {
+      const fileExists = await this.gcsService.fileExists(gcsPath);
+      if (!fileExists) return null;
 
-  try {
-    const raw = fs.readFileSync(absPath, 'utf-8').trim();
-    if (!raw) return [];
+      const raw = await this.gcsService.readFile(gcsPath);
+      if (!raw.trim()) return [];
 
-    // Nếu bắt đầu bằng [, coi như JSON Array (Postman)
-    if (raw.startsWith('[')) {
-      try {
-        const parsed = JSON.parse(raw);
-        return Array.isArray(parsed) ? parsed : [parsed];
-      } catch (err) {
-        console.error(`Invalid JSON array in ${filePath}:`, err);
-        return [];
-      }
-    }
-
-    // Ngược lại coi như JSON Lines (K6)
-    return raw
-      .split('\n')
-      .filter(line => line.trim().length > 0)
-      .map(line => {
+      // Nếu bắt đầu bằng [, coi như JSON Array (Postman)
+      if (raw.trim().startsWith('[')) {
         try {
-          return JSON.parse(line);
+          const parsed = JSON.parse(raw);
+          return Array.isArray(parsed) ? parsed : [parsed];
         } catch (err) {
-          console.error(`Invalid JSON line in ${filePath}:`, line);
-          return null;
+          console.error(`Invalid JSON array in ${gcsPath}:`, err);
+          return [];
         }
-      })
-      .filter(line => line !== null);
+      }
 
-  } catch (err) {
-    console.error(`Error reading time series file ${filePath}:`, err);
-    return [];
+      // Ngược lại coi như JSON Lines (K6)
+      return raw
+        .split('\n')
+        .filter(line => line.trim().length > 0)
+        .map(line => {
+          try {
+            return JSON.parse(line);
+          } catch (err) {
+            console.error(`Invalid JSON line in ${gcsPath}:`, line);
+            return null;
+          }
+        })
+        .filter(line => line !== null);
+
+    } catch (err) {
+      console.error(`Error reading time series file ${gcsPath}:`, err);
+      return [];
+    }
   }
-}
-
   
   // Lấy danh sách test run theo lịch
   async getTestRunsBySchedule(scheduleId: number) {
@@ -551,11 +555,13 @@ export class TestRunService {
     return await Promise.all(
       testRuns.map(async (testRun) => {
         let summaryData = {};
-        if (testRun.summary_path && fs.existsSync(testRun.summary_path)) {
+        if (testRun.summary_path) {
           try {
-            summaryData = JSON.parse(
-              fs.readFileSync(testRun.summary_path, 'utf-8'),
-            );
+            const fileExists = await this.gcsService.fileExists(testRun.summary_path);
+            if (fileExists) {
+              const rawData = await this.gcsService.readFile(testRun.summary_path);
+              summaryData = JSON.parse(rawData);
+            }
           } catch (e) {
             console.error(
               `Error parsing summary for test run ${testRun.id}:`,

@@ -3,12 +3,11 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { TestRun } from '../entities/test-run.entity';
 import { PerfQuickResultDetail } from '../entities/perf_quick_result_detail.entity';
 import { Repository } from 'typeorm';
-import * as fs from 'fs';
-import * as path from 'path';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import { Project } from 'src/project/entities/project.entity';
 import { AiAnalysisService } from 'src/ai_analysis/ai-analysis.service';
+import { GcsService } from 'src/project/gcs.service';
 
 const execAsync = promisify(exec);
 
@@ -25,6 +24,7 @@ export class QuickPerformanceTestService {
     private projectRepo: Repository<Project>,
 
     private readonly aiAnalysisService: AiAnalysisService,
+    private readonly gcsService: GcsService,
   ) {}
 
   async runQuickTest(projectId: number, scheduled_test_id?: number) {
@@ -41,76 +41,114 @@ export class QuickPerformanceTestService {
     };
 
     const testRunId = Date.now();
-    const inputPath = `uploads/test_inputs/performance-quick/testrun_${testRunId}.js`;
-    const resultPath = `uploads/results/performance-quick/testrun_${testRunId}_result.json`;
-    const summaryPath = `uploads/summaries/performance-quick/testrun_${testRunId}_summary.json`;
+    const inputFileName = `testrun_${testRunId}.js`;
 
-    // ensure dirs
-    if (!fs.existsSync(path.dirname(inputPath)))
-      fs.mkdirSync(path.dirname(inputPath), { recursive: true });
-    if (!fs.existsSync(path.dirname(resultPath)))
-      fs.mkdirSync(path.dirname(resultPath), { recursive: true });
-    if (!fs.existsSync(path.dirname(summaryPath)))
-      fs.mkdirSync(path.dirname(summaryPath), { recursive: true });
-
-    // 1️. Tạo script & ghi file
-    fs.writeFileSync(
-      inputPath,
-      this.generateK6Script(
-        config.apiUrl,
-        config.vus,
-        config.duration,
-        config.method,
-        project.headers ? JSON.parse(project.headers) : undefined,
-        project.body ? JSON.parse(project.body) : undefined,
-      ),
+    // Tạo script content
+    const scriptContent = this.generateK6Script(
+      config.apiUrl,
+      config.vus,
+      config.duration,
+      config.method,
+      project.headers ? JSON.parse(project.headers) : undefined,
+      project.body ? JSON.parse(project.body) : undefined,
     );
 
-    // 2️. Ghi log test_run
+    // Tạo temp file local để chạy K6
+    const tempInputPath = `/tmp/${inputFileName}`;
+    const tempResultPath = `/tmp/testrun_${testRunId}_result.json`;
+    
+    require('fs').writeFileSync(tempInputPath, scriptContent);
+
+    // Upload input script lên GCS
+    const inputBuffer = Buffer.from(scriptContent);
+    const inputFile = {
+      buffer: inputBuffer,
+      mimetype: 'application/javascript',
+      originalname: inputFileName,
+    } as Express.Multer.File;
+
+    const inputGcsPath = await this.gcsService.uploadFile(
+      inputFile,
+      inputFileName,
+      'test_inputs/performance-quick',
+    );
+
+    // Ghi log test_run trước khi chạy test
     const testRun = this.testRunRepo.create({
       project_id: project.id,
       scheduled_test_id: scheduled_test_id || null,
       category: 'performance',
       sub_type: 'quick',
-      input_file_path: inputPath,
-      raw_result_path: resultPath,
-      
-      summary_path: summaryPath,
+      input_file_path: inputGcsPath,
+      raw_result_path: null, // Sẽ update sau
+      summary_path: null, // Sẽ update sau
       config_json: config,
     });
     const saved = await this.testRunRepo.save(testRun);
 
-    // 3️. Chạy test bằng K6
-    const k6Path = 'D:\\AppDownloaded\\k6\\k6.exe'; // giữ như cũ
+    // Chạy test bằng K6
     try {
-      await execAsync(
-        `"${k6Path}" run ${inputPath} --summary-export=${resultPath}`,
-      );
+      await execAsync(`k6 run ${tempInputPath} --summary-export=${tempResultPath}`);
     } catch (err: any) {
       if (err.code === 99) {
-        console.warn(' Threshold bị vượt qua, nhưng test vẫn hợp lệ.');
+        console.warn('Threshold bị vượt qua, nhưng test vẫn hợp lệ.');
       } else {
-        // nếu k6 trả lỗi không phải threshold, throw để frontend biết
         throw err;
       }
     }
 
-    if (!fs.existsSync(resultPath)) {
-      throw new Error(`Không tìm thấy file kết quả test tại: ${resultPath}`);
+    if (!require('fs').existsSync(tempResultPath)) {
+      throw new Error(`Không tìm thấy file kết quả test tại: ${tempResultPath}`);
     }
 
-    // 4. Parse kết quả
-    const raw = JSON.parse(fs.readFileSync(resultPath, 'utf-8'));
+    // Parse kết quả
+    const raw = JSON.parse(require('fs').readFileSync(tempResultPath, 'utf-8'));
     const metricDetails = this.parseMetrics(raw);
 
-    // 5. Lưu summary file
-    fs.mkdirSync(path.dirname(summaryPath), { recursive: true });
-    fs.writeFileSync(summaryPath, JSON.stringify(metricDetails, null, 2));
+    // Upload raw result lên GCS
+    const rawResultBuffer = Buffer.from(JSON.stringify(raw));
+    const rawResultFile = {
+      buffer: rawResultBuffer,
+      mimetype: 'application/json',
+      originalname: `testrun_${testRunId}_result.json`,
+    } as Express.Multer.File;
 
-    // 6️. Lưu DB chi tiết
+    const rawResultGcsPath = await this.gcsService.uploadFile(
+      rawResultFile,
+      `testrun_${testRunId}_result.json`,
+      'results/performance-quick',
+    );
+
+    // Upload summary lên GCS
+    const summaryBuffer = Buffer.from(JSON.stringify(metricDetails, null, 2));
+    const summaryFile = {
+      buffer: summaryBuffer,
+      mimetype: 'application/json',
+      originalname: `testrun_${testRunId}_summary.json`,
+    } as Express.Multer.File;
+
+    const summaryGcsPath = await this.gcsService.uploadFile(
+      summaryFile,
+      `testrun_${testRunId}_summary.json`,
+      'summaries/performance-quick',
+    );
+
+    // Cleanup temp files
+    [tempInputPath, tempResultPath].forEach(file => {
+      if (require('fs').existsSync(file)) {
+        require('fs').unlinkSync(file);
+      }
+    });
+
+    // Update test run với GCS paths
+    saved.raw_result_path = rawResultGcsPath;
+    saved.summary_path = summaryGcsPath;
+    await this.testRunRepo.save(saved);
+
+    // Lưu DB chi tiết
     const details = metricDetails.map((m) =>
       this.detailRepo.create({
-        testRun: saved, // dùng object relation thay vì test_run_id
+        testRun: saved,
         metric_name: m.name,
         description: m.desc,
         category: m.cat,
@@ -121,8 +159,6 @@ export class QuickPerformanceTestService {
     );
 
     await this.detailRepo.save(details);
-
-   
 
     return { 
       test_run_id: saved.id, 

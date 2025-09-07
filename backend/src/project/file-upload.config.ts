@@ -1,19 +1,8 @@
-import { diskStorage } from 'multer';
+import { diskStorage, memoryStorage } from 'multer';
 import { extname } from 'path';
 
-export const multerStorage = diskStorage({
-  destination: (req, file, cb) => {
-    const dest = file.originalname.endsWith('.json')
-      ? './uploads/postman'
-      : './uploads/k6';
-
-    cb(null, dest);
-  },
-  filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
-    cb(null, uniqueSuffix + extname(file.originalname));
-  },
-});
+// Sử dụng memory storage thay vì disk storage cho cloud deployment
+export const multerStorage = memoryStorage();
 
 export const fileFilter = (req, file, cb) => {
   if (

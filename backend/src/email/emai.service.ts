@@ -2,6 +2,8 @@ import { Injectable, Logger } from '@nestjs/common';
 import * as nodemailer from 'nodemailer';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as os from 'os';
+import { GcsService } from 'src/project/gcs.service';
 
 interface EmailAttachment {
   filename: string;
@@ -31,16 +33,17 @@ export class EmailService {
   private readonly logger = new Logger(EmailService.name);
   private transporter: nodemailer.Transporter;
 
-  constructor() {
+  constructor(
+    private readonly gcsService: GcsService, // Add GCS service injection
+  ) {
     this.initializeTransporter();
   }
 
   private formatDateTime(date: any): string {
-  const d = new Date(date);
-  const pad = (n: number) => n.toString().padStart(2, '0');
-  return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
-}
-
+    const d = new Date(date);
+    const pad = (n: number) => n.toString().padStart(2, '0');
+    return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+  }
 
   private initializeTransporter() {
     const config = {
@@ -121,44 +124,95 @@ export class EmailService {
     return emailRegex.test(email);
   }
 
+  /**
+   * Download file from GCS to temporary location for email attachment
+   */
+  private async downloadGcsFileForEmail(gcsPath: string): Promise<{ localPath: string; cleanup: () => void }> {
+    try {
+      // Check if file exists in GCS
+      const exists = await this.gcsService.fileExists(gcsPath);
+      if (!exists) {
+        throw new Error(`File not found in GCS: ${gcsPath}`);
+      }
+
+      // Generate temporary file path
+      const fileName = path.basename(gcsPath);
+      const tempDir = os.tmpdir();
+      const localPath = path.join(tempDir, `email_${Date.now()}_${fileName}`);
+
+      // Download file from GCS and write to local file
+      const fileBuffer = await this.gcsService.downloadFile(gcsPath);
+      fs.writeFileSync(localPath, fileBuffer);
+
+      this.logger.log(`Downloaded file from GCS ${gcsPath} to ${localPath}`);
+
+      // Return cleanup function
+      const cleanup = () => {
+        try {
+          if (fs.existsSync(localPath)) {
+            fs.unlinkSync(localPath);
+            this.logger.log(`Cleaned up temporary file: ${localPath}`);
+          }
+        } catch (error) {
+          this.logger.warn(`Failed to cleanup temporary file ${localPath}: ${error.message}`);
+        }
+      };
+
+      return { localPath, cleanup };
+    } catch (error) {
+      this.logger.error(`Error downloading file from GCS: ${error.message}`);
+      throw error;
+    }
+  }
+
   async sendScheduledTestReport(
     recipientEmail: string | string[],
-    reportPath: string,
+    reportGcsPath: string, // Now expects GCS path instead of local path
     scheduleInfo: any,
     testResult: any,
   ): Promise<boolean> {
+    let cleanup: (() => void) | null = null;
+    
     try {
-      // Validate report file exists
-      if (!fs.existsSync(reportPath)) {
-        this.logger.error(`Report file not found: ${reportPath}`);
-        await this.sendReportGenerationError(
-          recipientEmail,
-          scheduleInfo,
-          `Report file not found: ${reportPath}`
-        );
-        return false;
-      }
+      // Download file from GCS to temporary location
+      const { localPath, cleanup: cleanupFn } = await this.downloadGcsFileForEmail(reportGcsPath);
+      cleanup = cleanupFn;
 
-      const filename = path.basename(reportPath);
+      const filename = path.basename(reportGcsPath);
       const summary = this.extractTestResultSummary(testResult, scheduleInfo);
       const html = this.generateReportEmailHTML(scheduleInfo, summary);
 
       const attachments: EmailAttachment[] = [
         {
           filename,
-          path: reportPath,
+          path: localPath, // Use local temporary path for attachment
           contentType: 'application/pdf',
         },
       ];
 
       const subject = this.generateReportSubject(scheduleInfo, summary);
 
+      const success = await this.sendMail(recipientEmail, subject, html, attachments);
       
-      
-      return await this.sendMail(recipientEmail, subject, html, attachments);
+      return success;
     } catch (error) {
       this.logger.error(`Error sending scheduled test report: ${error.message}`, error.stack);
+      
+      // Send error notification if report file is missing
+      if (error.message.includes('File not found in GCS')) {
+        await this.sendReportGenerationError(
+          recipientEmail,
+          scheduleInfo,
+          `Report file not found in cloud storage: ${reportGcsPath}`
+        );
+      }
+      
       return false;
+    } finally {
+      // Always cleanup temporary file
+      if (cleanup) {
+        cleanup();
+      }
     }
   }
 
@@ -188,8 +242,8 @@ export class EmailService {
   ): Promise<boolean> {
     try {
       const html = this.generateReportGenerationErrorHTML(scheduleInfo, error);
-       const scheduleTime = this.formatDateTime(scheduleInfo.created_at);
-      const subject = `⚠️ Report Generation Failed - ${scheduleTime|| scheduleInfo.id}`;
+      const scheduleTime = this.formatDateTime(scheduleInfo.created_at);
+      const subject = `⚠️ Report Generation Failed - ${scheduleTime || scheduleInfo.id}`;
       
       return await this.sendMail(recipientEmail, subject, html);
     } catch (emailError) {
@@ -321,7 +375,7 @@ export class EmailService {
     const projectName = scheduleInfo.project?.name || 'Unknown Project';
     const testType = this.getTestTypeDisplayName(summary.subType);
 
-     const scheduleTime = this.formatDateTime(scheduleInfo.created_at);
+    const scheduleTime = this.formatDateTime(scheduleInfo.created_at);
     
     return `
       <!DOCTYPE html>
@@ -412,7 +466,7 @@ export class EmailService {
 
   private generateErrorHTML(scheduleInfo: any, error: string): string {
     const projectName = scheduleInfo.project?.name || 'Unknown Project';
-     const scheduleTime = this.formatDateTime(scheduleInfo.created_at);
+    const scheduleTime = this.formatDateTime(scheduleInfo.created_at);
     
     return `
       <!DOCTYPE html>
@@ -463,7 +517,7 @@ export class EmailService {
 
   private generateReportGenerationErrorHTML(scheduleInfo: any, error: string): string {
     const projectName = scheduleInfo.project?.name || 'Unknown Project';
-     const scheduleTime = this.formatDateTime(scheduleInfo.created_at);
+    const scheduleTime = this.formatDateTime(scheduleInfo.created_at);
     
     return `
       <!DOCTYPE html>
@@ -487,7 +541,7 @@ export class EmailService {
         <div class="content">
           <p>The scheduled test executed successfully, but we encountered an issue generating the PDF report.</p>
           
-          <p><strong>Schedule:</strong> ${scheduleTime|| `ID #${scheduleInfo.id}`}</p>
+          <p><strong>Schedule:</strong> ${scheduleTime || `ID #${scheduleInfo.id}`}</p>
           <p><strong>Test Type:</strong> ${this.getTestTypeDisplayName(scheduleInfo.subType)}</p>
           <p><strong>Error Time:</strong> ${new Date().toLocaleString('vi-VN')}</p>
           

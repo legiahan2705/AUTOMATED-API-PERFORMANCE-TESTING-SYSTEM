@@ -6,6 +6,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { Project } from './entities/project.entity';
 import { fileFilter, multerStorage } from './file-upload.config';
 import { User } from 'src/auth/entities/user.entity';
+import { GcsService } from './gcs.service';
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { User } from 'src/auth/entities/user.entity';
     }),
   ],
   controllers: [ProjectController],
-  providers: [ProjectService],
+  providers: [ProjectService, GcsService],
+  exports: [GcsService]
 })
 export class ProjectModule {}

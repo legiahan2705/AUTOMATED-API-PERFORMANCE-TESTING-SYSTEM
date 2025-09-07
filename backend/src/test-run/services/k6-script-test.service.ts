@@ -2,7 +2,6 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import * as path from 'path';
-import * as fs from 'fs';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import { TestRun } from '../entities/test-run.entity';
@@ -10,7 +9,7 @@ import { PerfScriptResultDetail } from '../entities/perf_script_result_detail.en
 import { Project } from 'src/project/entities/project.entity';
 import { ScheduledTest } from 'src/scheduled-test/entities/scheduled-test.entity';
 import { AiAnalysisService } from 'src/ai_analysis/ai-analysis.service';
-
+import { GcsService } from 'src/project/gcs.service';
 
 const execAsync = promisify(exec);
 
@@ -30,19 +29,11 @@ export class K6ScriptTestService {
     private scheduledTestRepo: Repository<ScheduledTest>,
 
     private readonly aiAnalysisService: AiAnalysisService,
+    private readonly gcsService: GcsService,
   ) {}
 
   /**
-   * Thực hiện chạy K6 performance test dựa trên script của project hoặc scheduled test
-   * - Kiểm tra scheduled test trước, fallback về project nếu cần
-   * - Sao chép file script gốc sang thư mục test_inputs
-   * - Thực thi lệnh k6 run với tham số xuất summary
-   * - Đọc và phân tích kết quả raw, lưu summary ra file
-   * - Lưu test run và chi tiết metrics, checks vào database
-   * - Xử lý và lưu file log time series nếu có
-   * @param projectId - ID project cần chạy test
-   * @param scheduled_test_id - ID scheduled test (optional)
-   * @returns test_run_id và summary đã phân tích
+   * Thực hiện chạy K6 performance test dựa trên script từ GCS
    */
   async runK6ScriptTest(projectId: number, scheduled_test_id?: number) {
     const project = await this.projectRepo.findOne({
@@ -63,13 +54,13 @@ export class K6ScriptTestService {
       }
 
       // Kiểm tra xem scheduled test có file riêng không
-      if (scheduledTest.inputFilePath && fs.existsSync(scheduledTest.inputFilePath)) {
+      if (scheduledTest.inputFilePath && await this.gcsService.fileExists(scheduledTest.inputFilePath)) {
         sourceFilePath = scheduledTest.inputFilePath;
-        originalFileName = scheduledTest.originalFileName || path.basename(scheduledTest.inputFilePath);
+        originalFileName = scheduledTest.originalFileName || this.getFileNameFromGcsPath(scheduledTest.inputFilePath);
       } else if (project?.k6ScriptFilePath) {
         // Fallback to project file nếu scheduled test không có file
         sourceFilePath = project.k6ScriptFilePath;
-        originalFileName = project.originalK6ScriptFileName || path.basename(project.k6ScriptFilePath);
+        originalFileName = project.originalK6ScriptFileName || this.getFileNameFromGcsPath(project.k6ScriptFilePath);
       } else {
         throw new NotFoundException('Neither scheduled test nor project has K6 script file.');
       }
@@ -79,70 +70,153 @@ export class K6ScriptTestService {
         throw new NotFoundException('Project không có file K6 script.');
       }
       sourceFilePath = project.k6ScriptFilePath;
-      originalFileName = project.originalK6ScriptFileName || path.basename(project.k6ScriptFilePath);
+      originalFileName = project.originalK6ScriptFileName || this.getFileNameFromGcsPath(project.k6ScriptFilePath);
     }
-
-    // Hàm hỗ trợ tạo thư mục nếu chưa tồn tại
-    const ensureDir = (dir: string) => {
-      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-    };
-
-    // Tạo các thư mục cần thiết cho lưu trữ file test input, kết quả, summary và time series
-    ensureDir('uploads/test_inputs/performance-k6');
-    ensureDir('uploads/results/performance-k6');
-    ensureDir('uploads/summaries/performance-k6');
-    ensureDir('uploads/time_series/performance-k6');
 
     // Tạo tên file duy nhất dựa trên timestamp hiện tại
     const testRunId = Date.now();
     const inputFileName = `testrun_${testRunId}.js`;
-    const inputPath = path.join(
-      'uploads/test_inputs/performance-k6',
+
+    // Tạo temp file local để chạy K6 (vì K6 cần file local)
+    const tempInputPath = `/tmp/${inputFileName}`;
+    
+    // Download file từ GCS và lưu temp local
+    const scriptContent = await this.gcsService.readFile(sourceFilePath);
+    require('fs').writeFileSync(tempInputPath, scriptContent);
+
+    // Upload input file lên GCS để lưu trữ
+    const inputBuffer = Buffer.from(scriptContent);
+    const inputFile = {
+      buffer: inputBuffer,
+      mimetype: 'application/javascript',
+      originalname: inputFileName,
+    } as Express.Multer.File;
+
+    const inputGcsPath = await this.gcsService.uploadFile(
+      inputFile,
       inputFileName,
+      'test_inputs/performance-k6',
     );
 
-    // Sao chép file k6 script từ source (có thể từ project hoặc schedule)
-    fs.copyFileSync(sourceFilePath, inputPath);
+    // Tạo temp paths cho kết quả
+    const tempRawResultPath = `/tmp/testrun_${testRunId}_result.json`;
+    const tempTimeSeriesPath = `/tmp/test_${testRunId}_time_series.json`;
 
-    // Đường dẫn lưu kết quả raw và summary
-    const rawResultPath = `uploads/results/performance-k6/testrun_${testRunId}_result.json`;
-    const summaryPath = `uploads/summaries/performance-k6/testrun_${testRunId}_summary.json`;
-
-    // Đường dẫn lưu log thời gian (time series) - log JSON lines
-    const timeSeriesPath = `uploads/time_series/performance-k6/test_${testRunId}_time_series.json`;
-
-    // Thực thi lệnh k6 run và redirect stdout ra file log time series
-    // và --console-output để ghi log JSON trực tiếp ra file
+    // Thực thi lệnh k6 run
     try {
       await execAsync(
-        `k6 run ${inputPath} --summary-export=${rawResultPath} --out json=${timeSeriesPath}`,
+        `k6 run ${tempInputPath} --summary-export=${tempRawResultPath} --out json=${tempTimeSeriesPath}`,
         {
-          env: { ...process.env, LOG_PATH: timeSeriesPath },
+          env: { ...process.env, LOG_PATH: tempTimeSeriesPath },
         },
       );
     } catch (err: any) {
-      
       if (err.code === 99) {
         console.warn('K6 test completed, but performance thresholds were not met.');
       } else {
-        // Đối với bất kỳ lỗi nào khác (vd: cú pháp sai, không tìm thấy file), ghi log và throw lỗi.
         console.error('An unexpected error occurred while running k6:', err);
         throw err;
       }
     }
 
-   
-    if (!fs.existsSync(rawResultPath)) {
-      throw new Error(`Không tìm thấy file kết quả test tại: ${rawResultPath}`);
+    // Kiểm tra file kết quả tồn tại
+    if (!require('fs').existsSync(tempRawResultPath)) {
+      throw new Error(`Không tìm thấy file kết quả test tại: ${tempRawResultPath}`);
     }
-    const rawData = JSON.parse(fs.readFileSync(rawResultPath, 'utf-8'));
 
-    // Phân tích dữ liệu raw thành summary có cấu trúc dễ dùng
+    const rawData = JSON.parse(require('fs').readFileSync(tempRawResultPath, 'utf-8'));
+
+    // Phân tích dữ liệu raw thành summary
     const summary = this.analyzeResult(rawData);
     summary.original_file_name = originalFileName;
 
-    // Ghi summary ra file JSON
-    fs.writeFileSync(summaryPath, JSON.stringify(summary, null, 2));
+    // Upload raw result lên GCS
+    const rawResultBuffer = Buffer.from(JSON.stringify(rawData));
+    const rawResultFile = {
+      buffer: rawResultBuffer,
+      mimetype: 'application/json',
+      originalname: `testrun_${testRunId}_result.json`,
+    } as Express.Multer.File;
+
+    const rawResultGcsPath = await this.gcsService.uploadFile(
+      rawResultFile,
+      `testrun_${testRunId}_result.json`,
+      'results/performance-k6',
+    );
+
+    // Upload summary lên GCS
+    const summaryBuffer = Buffer.from(JSON.stringify(summary, null, 2));
+    const summaryFile = {
+      buffer: summaryBuffer,
+      mimetype: 'application/json',
+      originalname: `testrun_${testRunId}_summary.json`,
+    } as Express.Multer.File;
+
+    const summaryGcsPath = await this.gcsService.uploadFile(
+      summaryFile,
+      `testrun_${testRunId}_summary.json`,
+      'summaries/performance-k6',
+    );
+
+    // Xử lý time series nếu có
+    let timeSeriesGcsPath = null;
+    if (require('fs').existsSync(tempTimeSeriesPath)) {
+      try {
+        const lines = require('fs')
+          .readFileSync(tempTimeSeriesPath, 'utf-8')
+          .split('\n')
+          .map((l) => l.trim())
+          .filter(Boolean)
+          .map((l) => {
+            try {
+              return JSON.parse(l);
+            } catch {
+              return null;
+            }
+          })
+          .filter(
+            (obj) =>
+              obj &&
+              obj.type === 'Point' &&
+              obj.metric === 'http_req_duration' &&
+              obj.data?.time &&
+              obj.data?.value !== undefined &&
+              obj.data?.tags?.status !== undefined,
+          )
+          .map((obj) => ({
+            timestamp: obj.data.time,
+            duration: obj.data.value,
+            status: obj.data.tags.status,
+          }));
+
+        if (lines.length > 0) {
+          const timeSeriesBuffer = Buffer.from(
+            lines.map((l) => JSON.stringify(l)).join('\n')
+          );
+          const timeSeriesFile = {
+            buffer: timeSeriesBuffer,
+            mimetype: 'application/json',
+            originalname: `test_${testRunId}_time_series.json`,
+          } as Express.Multer.File;
+
+          timeSeriesGcsPath = await this.gcsService.uploadFile(
+            timeSeriesFile,
+            `test_${testRunId}_time_series.json`,
+            'time_series/performance-k6',
+          );
+          console.log('Log response time đã được upload lên GCS:', timeSeriesGcsPath);
+        }
+      } catch (err) {
+        console.warn(`Lỗi xử lý file time series: ${err.message}`);
+      }
+    }
+
+    // Cleanup temp files
+    [tempInputPath, tempRawResultPath, tempTimeSeriesPath].forEach(file => {
+      if (require('fs').existsSync(file)) {
+        require('fs').unlinkSync(file);
+      }
+    });
 
     // Tạo và lưu bản ghi test run mới vào database
     const testRun = this.testRunRepo.create({
@@ -150,10 +224,10 @@ export class K6ScriptTestService {
       scheduled_test_id: scheduled_test_id || null,
       category: 'performance',
       sub_type: 'script',
-      input_file_path: inputPath,
-      raw_result_path: rawResultPath,
-      summary_path: summaryPath,
-      time_series_path: timeSeriesPath,
+      input_file_path: inputGcsPath,
+      raw_result_path: rawResultGcsPath,
+      summary_path: summaryGcsPath,
+      time_series_path: timeSeriesGcsPath,
       config_json: { fileName: inputFileName },
       original_file_name: originalFileName,
     });
@@ -205,56 +279,6 @@ export class K6ScriptTestService {
     // Lưu tất cả chi tiết metrics và checks vào DB
     await this.detailRepo.save(entities);
 
-    // Xử lý file log time series nếu tồn tại
-    if (fs.existsSync(timeSeriesPath)) {
-      try {
-        const lines = fs
-          .readFileSync(timeSeriesPath, 'utf-8')
-          .split('\n')
-          .map((l) => l.trim())
-          .filter(Boolean)
-          .map((l) => {
-            try {
-              return JSON.parse(l);
-            } catch {
-              return null;
-            }
-          })
-          .filter(
-            (obj) =>
-              obj &&
-              obj.type === 'Point' &&
-              obj.metric === 'http_req_duration' &&
-              obj.data?.time &&
-              obj.data?.value !== undefined &&
-              obj.data?.tags?.status !== undefined,
-          )
-          .map((obj) => ({
-            timestamp: obj.data.time,
-            duration: obj.data.value,
-            status: obj.data.tags.status,
-          }));
-
-        if (lines.length > 0) {
-          fs.writeFileSync(
-            timeSeriesPath,
-            lines.map((l) => JSON.stringify(l)).join('\n'),
-          );
-          console.log('Log response time đã được ghi tại:', timeSeriesPath);
-        } else {
-          console.warn('File time series không có dữ liệu hợp lệ.');
-        }
-      } catch (err) {
-        console.warn(`Lỗi đọc file time series: ${err.message}`);
-      }
-    } else {
-      console.warn(
-        'Không tìm thấy log response time. Có thể script chưa được cập nhật đúng.',
-      );
-    }
-
-   
-
     return {
       test_run_id: savedTestRun.id,
       summary,
@@ -262,10 +286,12 @@ export class K6ScriptTestService {
     };
   }
 
+  private getFileNameFromGcsPath(gcsPath: string): string {
+    return gcsPath.split('/').pop() || 'unknown.js';
+  }
+
   /**
    * Phân tích raw result từ k6 thành cấu trúc summary tổng quan
-   * @param raw - Dữ liệu raw từ file kết quả
-   * @returns summary với tổng metrics, tổng checks, overview metrics và checks
    */
   private analyzeResult(raw: any) {
     const metrics = raw.metrics || {};

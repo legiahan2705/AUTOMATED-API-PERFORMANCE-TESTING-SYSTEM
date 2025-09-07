@@ -16,22 +16,19 @@ import {
   Put,
 } from '@nestjs/common';
 import { AnyFilesInterceptor } from '@nestjs/platform-express';
-import { diskStorage } from 'multer';
 import { Response } from 'express';
-import * as fs from 'fs';
-import * as path from 'path';
 import { BadRequestException } from '@nestjs/common';
 
 import { ProjectService } from './project.service';
 import { CreateProjectDto } from './dto/create-project.dto';
 import { multerStorage, fileFilter } from './file-upload.config';
+import { GcsService } from './gcs.service';
 import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
 import { AuthGuard } from '@nestjs/passport';
 
-function isValidPostmanCollection(filePath: string): boolean {
+function isValidPostmanCollection(content: string): boolean {
   try {
-    const raw = fs.readFileSync(filePath, 'utf8');
-    const json = JSON.parse(raw);
+    const json = JSON.parse(content);
     return json?.info?.schema?.includes('v2.1');
   } catch {
     return false;
@@ -40,19 +37,22 @@ function isValidPostmanCollection(filePath: string): boolean {
 
 @Controller('project')
 export class ProjectController {
-  constructor(private readonly projectService: ProjectService) {}
+  constructor(
+    private readonly projectService: ProjectService,
+    private readonly gcsService: GcsService,
+  ) {}
 
   /**
    * API: Tạo một project mới cho user
    * - Cho phép upload nhiều file (Postman .json, K6 .js)
-   * - Lưu đường dẫn file tương ứng vào DTO để ghi vào database
+   * - Lưu file lên Google Cloud Storage
    * - Yêu cầu user đã đăng nhập (bảo vệ bằng JWT)
    */
   @UseGuards(JwtAuthGuard)
   @Post()
   @UseInterceptors(
     AnyFilesInterceptor({
-      storage: multerStorage,
+      storage: multerStorage, // Sử dụng memory storage
       fileFilter,
     }),
   )
@@ -63,24 +63,44 @@ export class ProjectController {
   ) {
     const userId = req.user.userId;
 
-    // Gán đường dẫn file upload vào DTO
+    // Xử lý và upload files lên GCS
     for (const file of files) {
       if (file.originalname.endsWith('.json')) {
         // Kiểm tra định dạng Postman v2.1
-        if (!isValidPostmanCollection(file.path)) {
+        const content = file.buffer.toString('utf8');
+        if (!isValidPostmanCollection(content)) {
           throw new BadRequestException(
             'File Postman phải đúng định dạng chuẩn v2.1',
           );
         }
 
-        createProjectDto.postmanFilePath = file.path;
+        // Tạo tên file unique
+        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+        const fileName = `${uniqueSuffix}_${file.originalname}`;
+
+        // Upload lên GCS
+        const gcsPath = await this.gcsService.uploadFile(
+          file,
+          fileName,
+          'postman',
+        );
+
+        createProjectDto.postmanFilePath = gcsPath;
         createProjectDto.originalPostmanFileName = file.originalname;
       } else if (file.originalname.endsWith('.js')) {
-        createProjectDto.k6ScriptFilePath = file.path;
+        // Tạo tên file unique
+        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+        const fileName = `${uniqueSuffix}_${file.originalname}`;
+
+        // Upload lên GCS
+        const gcsPath = await this.gcsService.uploadFile(file, fileName, 'k6');
+
+        createProjectDto.k6ScriptFilePath = gcsPath;
         createProjectDto.originalK6ScriptFileName = file.originalname;
       }
     }
 
+    // Validate JSON strings
     try {
       if (createProjectDto.headers) JSON.parse(createProjectDto.headers);
       if (createProjectDto.body) JSON.parse(createProjectDto.body);
@@ -89,6 +109,7 @@ export class ProjectController {
         'Headers hoặc Body không phải định dạng JSON hợp lệ',
       );
     }
+
     // Gọi service để tạo project trong database
     const createdProject = await this.projectService.create(
       createProjectDto,
@@ -102,8 +123,6 @@ export class ProjectController {
 
   /**
    * API: Lấy danh sách các project của user hiện tại
-   * - Trả về danh sách project mà user đã tạo
-   * - Bảo vệ bằng JWT để chỉ truy cập khi đã đăng nhập
    */
   @UseGuards(AuthGuard('jwt'))
   @Get()
@@ -113,8 +132,7 @@ export class ProjectController {
   }
 
   /**
-   * API: Xóa project theo ID (chỉ khi project thuộc về user hiện tại)
-   * - Kiểm tra quyền sở hữu trước khi xóa
+   * API: Xóa project theo ID
    */
   @UseGuards(JwtAuthGuard)
   @Delete(':id')
@@ -124,10 +142,7 @@ export class ProjectController {
   }
 
   /**
-   * API: Đọc nội dung file đã upload trong project (dùng cho Postman/K6)
-   * - Đảm bảo chỉ được truy cập file trong thư mục `uploads`
-   * - Tránh lộ file hệ thống bên ngoài
-   * - Trả về nội dung file dạng text
+   * API: Đọc nội dung file từ Google Cloud Storage
    */
   @UseGuards(JwtAuthGuard)
   @Get('view-file')
@@ -136,23 +151,13 @@ export class ProjectController {
       return res.status(HttpStatus.BAD_REQUEST).send('Missing file path');
     }
 
-    // Xác định thư mục gốc chứa các file upload
-    const uploadsDir = path.resolve('./uploads');
-
-    // Xử lý path tuyệt đối một cách an toàn
-    const absPath = path.resolve(
-      uploadsDir,
-      path.relative('uploads', filePath),
-    );
-
-    // Ngăn chặn truy cập ra ngoài thư mục uploads
-    if (!absPath.startsWith(uploadsDir)) {
+    // Kiểm tra path có phải từ GCS không
+    if (!filePath.startsWith('gs://')) {
       throw new ForbiddenException('Invalid file path');
     }
 
-    // Đọc và trả về nội dung file
     try {
-      const content = fs.readFileSync(absPath, 'utf8');
+      const content = await this.gcsService.readFile(filePath);
       return res.status(HttpStatus.OK).send(content);
     } catch (err) {
       return res.status(HttpStatus.NOT_FOUND).send('File not found');
@@ -161,8 +166,6 @@ export class ProjectController {
 
   /**
    * API: Cập nhật thông tin project
-   * - Chỉ cho phép cập nhật nếu project thuộc về user hiện tại
-   * - Nhận dữ liệu cập nhật từ body
    */
   @UseGuards(JwtAuthGuard)
   @Put(':id')
@@ -175,25 +178,40 @@ export class ProjectController {
   async updateProject(
     @Param('id') id: string,
     @Body() data: Partial<CreateProjectDto>,
-    @UploadedFiles() files: Express.Multer.File[] = [], //  gán mặc định là []
+    @UploadedFiles() files: Express.Multer.File[] = [],
     @Request() req,
   ) {
     const userId = req.user.userId;
 
-    //  Kiểm tra có file mới thì mới xử lý
+    // Xử lý file mới (nếu có)
     if (files && Array.isArray(files)) {
       for (const file of files) {
         if (file.originalname.endsWith('.json')) {
-          if (!isValidPostmanCollection(file.path)) {
+          const content = file.buffer.toString('utf8');
+          if (!isValidPostmanCollection(content)) {
             throw new BadRequestException(
               'File Postman phải đúng định dạng chuẩn v2.1',
             );
           }
 
-          data.postmanFilePath = file.path;
+          const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+          const fileName = `${uniqueSuffix}_${file.originalname}`;
+
+          const gcsPath = await this.gcsService.uploadFile(
+            file,
+            fileName,
+            'postman',
+          );
+
+          data.postmanFilePath = gcsPath;
           data.originalPostmanFileName = file.originalname;
         } else if (file.originalname.endsWith('.js')) {
-          data.k6ScriptFilePath = file.path;
+          const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+          const fileName = `${uniqueSuffix}_${file.originalname}`;
+
+          const gcsPath = await this.gcsService.uploadFile(file, fileName, 'k6');
+
+          data.k6ScriptFilePath = gcsPath;
           data.originalK6ScriptFileName = file.originalname;
         }
       }

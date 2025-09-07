@@ -20,6 +20,7 @@ import { TestRunService } from './test-run.service';
 import { Test } from '@nestjs/testing';
 import { ScheduledTest } from 'src/scheduled-test/entities/scheduled-test.entity';
 import { AiAnalysisModule } from 'src/ai_analysis/ai-analysis.module';
+import { GcsService } from 'src/project/gcs.service';
 
 
 @Module({
@@ -38,6 +39,7 @@ import { AiAnalysisModule } from 'src/ai_analysis/ai-analysis.module';
     QuickPerformanceTestService, 
     K6ScriptTestService,
     TestRunService,
+     GcsService
   
   ],
   exports: [TestRunService],

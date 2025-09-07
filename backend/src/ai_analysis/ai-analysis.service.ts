@@ -1,7 +1,9 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as os from 'os';
 import Groq from 'groq-sdk';
+import { GcsService } from 'src/project/gcs.service';
 
 // ===== Kiểu dữ liệu giữ nguyên =====
 type ParsedPostman = {
@@ -55,9 +57,12 @@ interface AnalyzeOptions {
 
 @Injectable()
 export class AiAnalysisService {
+  private readonly logger = new Logger(AiAnalysisService.name);
   private client: Groq;
 
-  constructor() {
+  constructor(
+    private readonly gcsService: GcsService, // Add GCS service injection
+  ) {
     // Tạo Groq client, dùng API key trong .env
     this.client = new Groq({ apiKey: process.env.GROQ_API_KEY });
   }
@@ -73,9 +78,122 @@ export class AiAnalysisService {
     }
   }
 
-  // ===== API chính gọi phân tích =====
-  async analyzeWithAI(filePath: string, options: AnalyzeOptions = {}) {
-    // dùng  model llama-3.1-8b-instant (nhanh, ổn định, phù hợp cho phân tích)
+  /**
+   * Download JSON file from GCS to local temp for processing
+   */
+  private async downloadGcsFileForAnalysis(gcsPath: string): Promise<{ localPath: string; cleanup: () => void }> {
+    try {
+      // Check if file exists in GCS
+      const exists = await this.gcsService.fileExists(gcsPath);
+      if (!exists) {
+        throw new Error(`Analysis file not found in GCS: ${gcsPath}`);
+      }
+
+      // Generate temporary file path
+      const fileName = path.basename(gcsPath);
+      const tempDir = os.tmpdir();
+      const localPath = path.join(tempDir, `analysis_${Date.now()}_${fileName}`);
+
+      // Download file from GCS and write to local path
+      const fileBuffer = await this.gcsService.downloadFile(gcsPath);
+      fs.writeFileSync(localPath, fileBuffer);
+
+      this.logger.log(`Downloaded analysis file from GCS ${gcsPath} to ${localPath}`);
+
+      // Return cleanup function
+      const cleanup = () => {
+        try {
+          if (fs.existsSync(localPath)) {
+            fs.unlinkSync(localPath);
+            this.logger.log(`Cleaned up temporary analysis file: ${localPath}`);
+          }
+        } catch (error) {
+          this.logger.warn(`Failed to cleanup temporary file ${localPath}: ${error.message}`);
+        }
+      };
+
+      return { localPath, cleanup };
+    } catch (error) {
+      this.logger.error(`Error downloading analysis file from GCS: ${error.message}`);
+      throw error;
+    }
+  }
+
+  // ===== API chính gọi phân tích - Updated for GCS =====
+  async analyzeWithAI(gcsFilePath: string, options: AnalyzeOptions = {}) {
+    // dùng model llama-3.1-8b-instant (nhanh, ổn định, phù hợp cho phân tích)
+    const { model = 'llama-3.1-8b-instant', language = 'en' } = options;
+    
+    let cleanup: (() => void) | null = null;
+
+    try {
+      // 1. Download file from GCS to local temp
+      const { localPath, cleanup: cleanupFn } = await this.downloadGcsFileForAnalysis(gcsFilePath);
+      cleanup = cleanupFn;
+
+      // 2. Đọc file JSON kết quả test
+      const raw = fs.readFileSync(localPath, 'utf-8');
+      const data = JSON.parse(raw);
+
+      // 3. Parse theo loại test
+      const parsed = this.detectAndParse(data);
+
+      // 4. Timeout chỉ để log/meta
+      const timeoutMs = this.getTimeoutForTestType(parsed.type, options.timeoutMs);
+
+      // 5. Heuristics rule-based
+      const heuristics = this.buildHeuristics(parsed);
+
+      // 6. Prompt cho AI (cải tiến để phù hợp với model mới)
+      const aiInput = this.buildPrompt(parsed, heuristics, language);
+
+      // 7. Gọi Groq API với model mới
+      const completion = await this.client.chat.completions.create({
+        model,
+        messages: [
+          { 
+            role: 'system', 
+            content: language === 'vi' 
+              ? 'Bạn là chuyên gia QA/Performance Testing. Trả lời rõ ràng và súc tích bằng tiếng Việt.' 
+              : 'You are a QA/Performance expert. Reply clearly and concisely.' 
+          },
+          { role: 'user', content: aiInput },
+        ],
+        temperature: 0.7, // Thêm temperature để có kết quả cân bằng
+        max_tokens: 2048, // Giới hạn token để tối ưu chi phí
+      });
+
+      const aiOutput = completion.choices[0]?.message?.content || '';
+
+      // 8. Trả kết quả
+      return {
+        aiInput,
+        aiOutput,
+        structured: heuristics,
+        meta: { 
+          model, 
+          language, 
+          timeoutMs, 
+          testType: parsed.type,
+          gcsPath: gcsFilePath 
+        }
+      };
+    } catch (error: any) {
+      this.logger.error('Error in AI analysis:', error?.message || error);
+      throw error;
+    } finally {
+      // Always cleanup temporary file
+      if (cleanup) {
+        cleanup();
+      }
+    }
+  }
+
+  /**
+   * Alternative method to analyze from already downloaded/local file
+   * Useful when file is already available locally
+   */
+  async analyzeWithAIFromLocal(filePath: string, options: AnalyzeOptions = {}) {
     const { model = 'llama-3.1-8b-instant', language = 'en' } = options;
 
     try {
@@ -107,8 +225,8 @@ export class AiAnalysisService {
           },
           { role: 'user', content: aiInput },
         ],
-        temperature: 0.7, // Thêm temperature để có kết quả cân bằng
-        max_tokens: 2048, // Giới hạn token để tối ưu chi phí
+        temperature: 0.7,
+        max_tokens: 2048,
       });
 
       const aiOutput = completion.choices[0]?.message?.content || '';
@@ -118,10 +236,72 @@ export class AiAnalysisService {
         aiInput,
         aiOutput,
         structured: heuristics,
-        meta: { model, language, timeoutMs, testType: parsed.type }
+        meta: { 
+          model, 
+          language, 
+          timeoutMs, 
+          testType: parsed.type,
+          localPath: filePath 
+        }
       };
     } catch (error: any) {
-      console.error('Error in AI analysis:', error?.message || error);
+      this.logger.error('Error in AI analysis (local):', error?.message || error);
+      throw error;
+    }
+  }
+
+  /**
+   * Analyze directly from JSON data object (no file needed)
+   */
+  async analyzeWithAIFromData(data: any, options: AnalyzeOptions = {}) {
+    const { model = 'llama-3.1-8b-instant', language = 'en' } = options;
+
+    try {
+      // 1. Parse theo loại test
+      const parsed = this.detectAndParse(data);
+
+      // 2. Timeout chỉ để log/meta
+      const timeoutMs = this.getTimeoutForTestType(parsed.type, options.timeoutMs);
+
+      // 3. Heuristics rule-based
+      const heuristics = this.buildHeuristics(parsed);
+
+      // 4. Prompt cho AI (cải tiến để phù hợp với model mới)
+      const aiInput = this.buildPrompt(parsed, heuristics, language);
+
+      // 5. Gọi Groq API với model mới
+      const completion = await this.client.chat.completions.create({
+        model,
+        messages: [
+          { 
+            role: 'system', 
+            content: language === 'vi' 
+              ? 'Bạn là chuyên gia QA/Performance Testing. Trả lời rõ ràng và súc tích bằng tiếng Việt.' 
+              : 'You are a QA/Performance expert. Reply clearly and concisely.' 
+          },
+          { role: 'user', content: aiInput },
+        ],
+        temperature: 0.7,
+        max_tokens: 2048,
+      });
+
+      const aiOutput = completion.choices[0]?.message?.content || '';
+
+      // 6. Trả kết quả
+      return {
+        aiInput,
+        aiOutput,
+        structured: heuristics,
+        meta: { 
+          model, 
+          language, 
+          timeoutMs, 
+          testType: parsed.type,
+          source: 'direct_data'
+        }
+      };
+    } catch (error: any) {
+      this.logger.error('Error in AI analysis (direct data):', error?.message || error);
       throw error;
     }
   }

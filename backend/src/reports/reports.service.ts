@@ -1,21 +1,22 @@
 import { Injectable } from '@nestjs/common';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import * as fs from 'fs';
 import * as path from 'path';
 import { ChartGeneratorService } from './chartgenerator.service';
+import { GcsService } from 'src/project/gcs.service'; // Add this import
 
 @Injectable()
 export class ReportsService {
-  constructor(private chartGenerator: ChartGeneratorService) {}
+  constructor(
+    private chartGenerator: ChartGeneratorService,
+    private gcsService: GcsService, // Inject GcsService
+  ) {}
 
   /**
-   * Generate scheduled test PDF report with charts
+   * Generate scheduled test PDF report with charts and upload to GCS
    */
   async generateScheduledTestPDF(detail: any): Promise<string> {
     try {
-     
-      
       const doc = new jsPDF('portrait', 'pt', 'a4');
       
       // Enhanced data extraction with better fallbacks
@@ -122,11 +123,7 @@ export class ReportsService {
       // === 7. Footer for all pages ===
       this.addEnhancedFooter(doc, testRun?.project?.name);
 
-      // === 8. Save PDF ===
-      const uploadsDir = path.join(process.cwd(), 'uploads', 'reports');
-      if (!fs.existsSync(uploadsDir))
-        fs.mkdirSync(uploadsDir, { recursive: true });
-
+      // === 8. Upload PDF to GCS ===
       const timestamp = new Date()
         .toISOString()
         .slice(0, 19)
@@ -134,12 +131,33 @@ export class ReportsService {
       const projectName = testRun?.project?.name || 'TestReport';
       const sanitizedProjectName = projectName.replace(/[^a-zA-Z0-9]/g, '_');
       const fileName = `${sanitizedProjectName}_${subType}_${timestamp}.pdf`;
-      const filePath = path.join(uploadsDir, fileName);
+      
+      // Convert PDF to buffer
+      const pdfBuffer = Buffer.from(doc.output('arraybuffer'));
+      
+      // Create a mock Express.Multer.File object for GCS upload
+      const mockFile: Express.Multer.File = {
+        fieldname: 'file',
+        originalname: fileName,
+        encoding: '7bit',
+        mimetype: 'application/pdf',
+        buffer: pdfBuffer,
+        size: pdfBuffer.length,
+        destination: '',
+        filename: fileName,
+        path: '',
+        stream: null,
+      };
 
-      fs.writeFileSync(filePath, Buffer.from(doc.output('arraybuffer')));
+      // Upload to GCS
+      const gcsPath = await this.gcsService.uploadFile(
+        mockFile,
+        fileName,
+        'reports' // folder trong GCS bucket
+      );
 
-      console.log(`PDF generated successfully: ${filePath}`);
-      return filePath;
+      console.log(`PDF uploaded successfully to GCS: ${gcsPath}`);
+      return gcsPath;
     } catch (error) {
       console.error('Error generating PDF for test run:', error);
       throw error;
@@ -174,7 +192,6 @@ export class ReportsService {
           const assertionsImg = `data:image/png;base64,${charts.assertions.toString('base64')}`;
           doc.addImage(assertionsImg, 'PNG', 40, currentY, 250, 150);
           
-          
           // Add response time chart next to it
           if (charts.responseTime) {
             const responseImg = `data:image/png;base64,${charts.responseTime.toString('base64')}`;
@@ -191,7 +208,6 @@ export class ReportsService {
         if (charts.checks) {
           const checksImg = `data:image/png;base64,${charts.checks.toString('base64')}`;
           doc.addImage(checksImg, 'PNG', 40, currentY, 250, 150);
-          
         }
         
         // Add error rate chart next to it
@@ -225,24 +241,23 @@ export class ReportsService {
 
   // Helper method to convert raw summary to quick data format
   private convertRawSummaryToQuickData(rawSummary: any): { metric_name: string; value: number }[] {
-  const result: { metric_name: string; value: number }[] = [];
+    const result: { metric_name: string; value: number }[] = [];
 
-  if (rawSummary.http_req_duration_p95?.value) {
-    result.push({ metric_name: 'http_req_duration_p95', value: rawSummary.http_req_duration_p95.value });
-  }
-  if (rawSummary.error_rate?.value) {
-    result.push({ metric_name: 'error_rate', value: rawSummary.error_rate.value });
-  }
-  if (rawSummary.passes?.value) {
-    result.push({ metric_name: 'checks_pass', value: rawSummary.passes.value });
-  }
-  if (rawSummary.failures?.value) {
-    result.push({ metric_name: 'checks_fail', value: rawSummary.failures.value });
-  }
+    if (rawSummary.http_req_duration_p95?.value) {
+      result.push({ metric_name: 'http_req_duration_p95', value: rawSummary.http_req_duration_p95.value });
+    }
+    if (rawSummary.error_rate?.value) {
+      result.push({ metric_name: 'error_rate', value: rawSummary.error_rate.value });
+    }
+    if (rawSummary.passes?.value) {
+      result.push({ metric_name: 'checks_pass', value: rawSummary.passes.value });
+    }
+    if (rawSummary.failures?.value) {
+      result.push({ metric_name: 'checks_fail', value: rawSummary.failures.value });
+    }
 
-  return result;
-}
-
+    return result;
+  }
 
   // === Header Generation ===
   private generateEnhancedHeader(doc: jsPDF, detail: any, subType: string, testRun: any) {

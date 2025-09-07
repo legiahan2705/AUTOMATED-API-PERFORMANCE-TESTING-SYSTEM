@@ -1,9 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { jsPDF } from 'jspdf';
-import autoTable from 'jspdf-autotable';
-import * as fs from 'fs';
 import * as path from 'path';
 import { exec } from 'child_process';
 import { promisify } from 'util';
@@ -12,6 +9,7 @@ import { ScheduledTest } from 'src/scheduled-test/entities/scheduled-test.entity
 import { ApiResultDetail } from '../entities/api-result-detail.entity';
 import { TestRun } from '../entities/test-run.entity';
 import { AiAnalysisService } from 'src/ai_analysis/ai-analysis.service';
+import { GcsService } from 'src/project/gcs.service';
 
 const execAsync = promisify(exec);
 
@@ -31,6 +29,7 @@ export class PostmanTestService {
     private scheduledTestRepo: Repository<ScheduledTest>,
 
     private readonly aiAnalysisService: AiAnalysisService,
+    private readonly gcsService: GcsService,
   ) {}
 
   async runPostmanTest(projectId: number, scheduled_test_id?: number) {
@@ -52,13 +51,13 @@ export class PostmanTestService {
       }
 
       // Kiểm tra xem scheduled test có file riêng không
-      if (scheduledTest.inputFilePath && fs.existsSync(scheduledTest.inputFilePath)) {
+      if (scheduledTest.inputFilePath && await this.gcsService.fileExists(scheduledTest.inputFilePath)) {
         sourceFilePath = scheduledTest.inputFilePath;
-        originalFileName = scheduledTest.originalFileName || path.basename(scheduledTest.inputFilePath);
+        originalFileName = scheduledTest.originalFileName || this.getFileNameFromGcsPath(scheduledTest.inputFilePath);
       } else if (project?.postmanFilePath) {
         // Fallback to project file nếu scheduled test không có file
         sourceFilePath = project.postmanFilePath;
-        originalFileName = project.originalPostmanFileName || path.basename(project.postmanFilePath);
+        originalFileName = project.originalPostmanFileName || this.getFileNameFromGcsPath(project.postmanFilePath);
       } else {
         throw new NotFoundException('Neither scheduled test nor project has Postman file.');
       }
@@ -68,40 +67,44 @@ export class PostmanTestService {
         throw new NotFoundException('Project không có file Postman.');
       }
       sourceFilePath = project.postmanFilePath;
-      originalFileName = project.originalPostmanFileName || path.basename(project.postmanFilePath);
+      originalFileName = project.originalPostmanFileName || this.getFileNameFromGcsPath(project.postmanFilePath);
     }
 
     const testRunId = Date.now();
     const inputFileName = `testrun_${testRunId}.json`;
-    const inputPath = path.join('uploads/test_inputs/postman', inputFileName);
-
-    // Tạo thư mục nếu chưa có
-    const inputDir = path.dirname(inputPath);
-    if (!fs.existsSync(inputDir)) {
-      fs.mkdirSync(inputDir, { recursive: true });
-    }
-
-    // Copy file từ source (có thể từ project hoặc schedule)
-    fs.copyFileSync(sourceFilePath, inputPath);
-
-    const rawResultPath = `uploads/results/api/testrun_${testRunId}_result.json`;
-    const summaryPath = `uploads/summaries/api/testrun_${testRunId}_summary.json`;
-    const timeSeriesDir = 'uploads/time_series/postman';
     
-    // Tạo các thư mục cần thiết
-    [path.dirname(rawResultPath), path.dirname(summaryPath), timeSeriesDir].forEach(dir => {
-      if (!fs.existsSync(dir)) {
-        fs.mkdirSync(dir, { recursive: true });
-      }
-    });
+    // Tạo temp file local để chạy Newman (vì Newman cần file local)
+    const tempInputPath = `/tmp/${inputFileName}`;
+    
+    // Download file từ GCS và lưu temp local
+    const collectionContent = await this.gcsService.readFile(sourceFilePath);
+    require('fs').writeFileSync(tempInputPath, collectionContent);
 
-    const timeSeriesPath = path.join(timeSeriesDir, `test_${testRunId}_time_series.json`);
+    // Upload input file lên GCS để lưu trữ
+    const inputBuffer = Buffer.from(collectionContent);
+    const inputFile = {
+      buffer: inputBuffer,
+      mimetype: 'application/json',
+      originalname: inputFileName,
+    } as Express.Multer.File;
 
-    const cmd = `npx newman run ${inputPath} -r json --reporter-json-export ${rawResultPath}`;
+    const inputGcsPath = await this.gcsService.uploadFile(
+      inputFile,
+      inputFileName,
+      'test_inputs/postman',
+    );
+
+    // Tạo temp paths cho kết quả
+    const tempRawResultPath = `/tmp/testrun_${testRunId}_result.json`;
+
+    // Chạy Newman test
+    const cmd = `npx newman run ${tempInputPath} -r json --reporter-json-export ${tempRawResultPath}`;
     await execAsync(cmd);
 
-    // Lấy time series từ raw Newman
-    const rawData = JSON.parse(fs.readFileSync(rawResultPath, 'utf-8'));
+    // Đọc kết quả
+    const rawData = JSON.parse(require('fs').readFileSync(tempRawResultPath, 'utf-8'));
+    
+    // Tạo time series từ raw Newman data
     const timeSeries = (rawData.run?.executions || []).map(e => ({
       timestamp: new Date().toISOString(),
       duration: e.response?.responseTime || 0,
@@ -109,29 +112,78 @@ export class PostmanTestService {
       name: e.item?.name || '',
       url: e.request?.url?.raw || '',
     }));
-    fs.writeFileSync(timeSeriesPath, JSON.stringify(timeSeries, null, 2));
 
-    console.log('Time series đã được ghi tại:', timeSeriesPath);
+    // Upload raw result lên GCS
+    const rawResultBuffer = Buffer.from(JSON.stringify(rawData));
+    const rawResultFile = {
+      buffer: rawResultBuffer,
+      mimetype: 'application/json',
+      originalname: `testrun_${testRunId}_result.json`,
+    } as Express.Multer.File;
 
+    const rawResultGcsPath = await this.gcsService.uploadFile(
+      rawResultFile,
+      `testrun_${testRunId}_result.json`,
+      'results/api',
+    );
+
+    // Phân tích kết quả
     const { summary, details } = this.analyzeResult(rawData);
     summary.original_file_name = originalFileName;
 
-    fs.writeFileSync(summaryPath, JSON.stringify(summary, null, 2));
+    // Upload summary lên GCS
+    const summaryBuffer = Buffer.from(JSON.stringify(summary, null, 2));
+    const summaryFile = {
+      buffer: summaryBuffer,
+      mimetype: 'application/json',
+      originalname: `testrun_${testRunId}_summary.json`,
+    } as Express.Multer.File;
 
+    const summaryGcsPath = await this.gcsService.uploadFile(
+      summaryFile,
+      `testrun_${testRunId}_summary.json`,
+      'summaries/api',
+    );
+
+    // Upload time series lên GCS
+    const timeSeriesBuffer = Buffer.from(JSON.stringify(timeSeries, null, 2));
+    const timeSeriesFile = {
+      buffer: timeSeriesBuffer,
+      mimetype: 'application/json',
+      originalname: `test_${testRunId}_time_series.json`,
+    } as Express.Multer.File;
+
+    const timeSeriesGcsPath = await this.gcsService.uploadFile(
+      timeSeriesFile,
+      `test_${testRunId}_time_series.json`,
+      'time_series/postman',
+    );
+
+    console.log('Time series đã được upload lên GCS:', timeSeriesGcsPath);
+
+    // Cleanup temp files
+    [tempInputPath, tempRawResultPath].forEach(file => {
+      if (require('fs').existsSync(file)) {
+        require('fs').unlinkSync(file);
+      }
+    });
+
+    // Lưu test run vào database
     const testRun = this.testRunRepo.create({
       project_id: projectId,
       scheduled_test_id: scheduled_test_id || null,
       category: 'api',
       sub_type: 'postman',
-      input_file_path: inputPath,
-      raw_result_path: rawResultPath,
-      summary_path: summaryPath,
-      time_series_path: timeSeriesPath,
+      input_file_path: inputGcsPath,
+      raw_result_path: rawResultGcsPath,
+      summary_path: summaryGcsPath,
+      time_series_path: timeSeriesGcsPath,
       config_json: { fileName: inputFileName },
       original_file_name: originalFileName,
     });
     const savedTestRun = await this.testRunRepo.save(testRun);
 
+    // Lưu chi tiết kết quả
     const entities = details.map((d) =>
       this.detailRepo.create({
         ...d,
@@ -140,13 +192,15 @@ export class PostmanTestService {
     );
     await this.detailRepo.save(entities);
 
-    
-
     return {
       test_run_id: savedTestRun.id,
       summary,
       ai_analysis: null,
     };
+  }
+
+  private getFileNameFromGcsPath(gcsPath: string): string {
+    return gcsPath.split('/').pop() || 'unknown.json';
   }
 
   private analyzeResult(raw: any) {

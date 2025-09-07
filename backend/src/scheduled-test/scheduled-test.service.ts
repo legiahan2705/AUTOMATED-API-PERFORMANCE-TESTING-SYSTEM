@@ -5,15 +5,13 @@ import { SchedulerRegistry } from '@nestjs/schedule';
 import { CronJob } from 'cron';
 import axios from 'axios';
 
-import * as fs from 'fs';
-import * as path from 'path';
-
 import { ScheduledTest } from './entities/scheduled-test.entity';
 import { CreateScheduledTestDto } from './dto/create-scheduled-test.dto';
 import { UpdateScheduledTestDto } from './dto/update-scheduled-test.dto';
 import { ReportsService } from '../reports/reports.service';
 import { TestRunService } from '../test-run/test-run.service';
 import { EmailService } from 'src/email/emai.service';
+import { GcsService } from 'src/project/gcs.service';
 
 // Định nghĩa kiểu dữ liệu trả về từ API BE test-run
 interface TestRunResponse {
@@ -32,21 +30,23 @@ export class ScheduledTestsService {
     private readonly reportsService: ReportsService,
     private readonly testRunService: TestRunService,
     private readonly emailService: EmailService,
+    private readonly gcsService: GcsService, // Add GcsService injection
   ) {}
 
   async handleFileUpload(file: Express.Multer.File, subType: string): Promise<string> {
-    const uploadDir = path.join(__dirname, '..', '..', 'uploads', 'schedule', subType);
+    // Generate unique filename
+    const timestamp = Date.now();
+    const fileName = `${timestamp}_${file.originalname}`;
+    
+    // Upload to GCS in schedule folder
+    const gcsPath = await this.gcsService.uploadFile(
+      file,
+      fileName,
+      `schedule/${subType}`
+    );
 
-    if (!fs.existsSync(uploadDir)) {
-      fs.mkdirSync(uploadDir, { recursive: true });
-    }
-
-    const fileName = `${Date.now()}_${file.originalname}`;
-    const filePath = path.join(uploadDir, fileName);
-
-    fs.writeFileSync(filePath, file.buffer);
-
-    return `uploads/schedule/${subType}/${fileName}`;
+    this.logger.log(`File uploaded to GCS: ${gcsPath}`);
+    return gcsPath;
   }
 
   async create(data: Partial<ScheduledTest>, file?: Express.Multer.File) {
@@ -55,8 +55,8 @@ export class ScheduledTestsService {
     }
 
     if (file) {
-      const filePath = await this.handleFileUpload(file, data.subType!);
-      data.inputFilePath = filePath;
+      const gcsPath = await this.handleFileUpload(file, data.subType!);
+      data.inputFilePath = gcsPath;
     }
 
     if ('isActive' in data) {
@@ -81,8 +81,19 @@ export class ScheduledTestsService {
     if (!schedule) throw new Error(`Schedule #${id} not found`);
 
     if (file) {
-      const filePath = await this.handleFileUpload(file, dto.subType ?? schedule.subType);
-      dto.inputFilePath = filePath;
+      // Delete old file if exists
+      if (schedule.inputFilePath) {
+        try {
+          await this.gcsService.deleteFile(schedule.inputFilePath);
+          this.logger.log(`Deleted old file: ${schedule.inputFilePath}`);
+        } catch (error) {
+          this.logger.warn(`Failed to delete old file: ${error.message}`);
+        }
+      }
+
+      // Upload new file
+      const gcsPath = await this.handleFileUpload(file, dto.subType ?? schedule.subType);
+      dto.inputFilePath = gcsPath;
     }
 
     await this.scheduledTestsRepo.update(id, dto);
@@ -110,6 +121,18 @@ export class ScheduledTestsService {
   }
 
   async remove(id: number) {
+    const schedule = await this.findOne(id);
+    
+    // Delete associated file from GCS
+    if (schedule?.inputFilePath) {
+      try {
+        await this.gcsService.deleteFile(schedule.inputFilePath);
+        this.logger.log(`Deleted file from GCS: ${schedule.inputFilePath}`);
+      } catch (error) {
+        this.logger.warn(`Failed to delete file: ${error.message}`);
+      }
+    }
+
     await this.scheduledTestsRepo.delete(id);
     this.removeCronJob(id);
     return { deleted: true };
@@ -217,16 +240,16 @@ export class ScheduledTestsService {
           throw new Error(`Không tìm thấy test run detail cho ID: ${testRunId}`);
         }
 
-        // Tạo PDF report với data structure phù hợp
-        const reportPath = await this.reportsService.generateScheduledTestPDF(testDetail);
+        // Tạo PDF report với data structure phù hợp - returns GCS path now
+        const reportGcsPath = await this.reportsService.generateScheduledTestPDF(testDetail);
 
-        this.logger.log(`PDF report đã được tạo thành công: ${reportPath}`);
+        this.logger.log(`PDF report đã được tạo thành công: ${reportGcsPath}`);
 
         // Gửi email với PDF report đính kèm
         if (schedule.emailTo) {
           await this.emailService.sendScheduledTestReport(
             schedule.emailTo,
-            reportPath,
+            reportGcsPath, // Pass GCS path instead of local path
             schedule,
             testDetail,
           );
@@ -278,7 +301,7 @@ export class ScheduledTestsService {
   }
 
   /**
-   * Kiểm tra xem test run data đã sẵn sàng chưa
+   * Kiểm tra xem test run data đã sẵn sàng chưa - Updated for GCS
    */
   private async verifyTestRunDataReady(testRunId: number): Promise<boolean> {
     try {
@@ -290,16 +313,16 @@ export class ScheduledTestsService {
 
       const testRun = testDetail.testRun;
       
-      // Kiểm tra các file paths có tồn tại không
+      // Kiểm tra các file paths có tồn tại không trong GCS
       const requiredChecks: boolean[] = [];
       
       if (testRun.summary_path) {
-        const summaryExists = fs.existsSync(path.resolve(process.cwd(), testRun.summary_path));
+        const summaryExists = await this.gcsService.fileExists(testRun.summary_path);
         requiredChecks.push(summaryExists);
       }
       
       if (testRun.raw_result_path) {
-        const rawResultExists = fs.existsSync(path.resolve(process.cwd(), testRun.raw_result_path));
+        const rawResultExists = await this.gcsService.fileExists(testRun.raw_result_path);
         requiredChecks.push(rawResultExists);
       }
 
