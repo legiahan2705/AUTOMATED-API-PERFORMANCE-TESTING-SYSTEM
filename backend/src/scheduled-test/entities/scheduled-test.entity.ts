@@ -65,12 +65,13 @@ inputFilePath?: string;
   emailTo: string;
 
   // Lần chạy gần nhất
-  @Column({ type: 'datetime', nullable: true })
+  @Column({ type: 'timestamp', nullable: true })
   lastRunAt: Date;
 
   // Trạng thái kích hoạt
-  @Column({ type: 'tinyint', width: 1, default: 1 })
+@Column({ type: 'boolean', default: true })
 isActive: boolean;
+
 
     @Column({ nullable: true })
   originalFileName?: string; // Tên file gốc do user upload
