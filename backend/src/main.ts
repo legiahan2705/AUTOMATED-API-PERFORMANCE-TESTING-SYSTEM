@@ -8,7 +8,6 @@ async function bootstrap() {
   app.enableCors({
     origin: [
       'https://automated-api-performance-testing-system-mt5s7hdoh.vercel.app', // FE mới
-      'https://automated-api-performance-testing-s.vercel.app', // cũ nếu vẫn muốn
     ],
     credentials: true,
   });
