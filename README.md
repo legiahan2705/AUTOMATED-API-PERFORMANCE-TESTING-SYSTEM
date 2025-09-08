@@ -245,7 +245,6 @@ export default function () {
 
 **❌ Postman Collection Upload Fails**
 - Ensure collection is exported as v2.1 format
-- Check for undefined environment variables
 - Verify JSON syntax validity
 - Remove special characters from file names
 
@@ -262,10 +261,8 @@ export default function () {
 - Verify API endpoint accessibility
 
 **❌ AI Analysis Not Working**
-- Check Groq API key validity
 - Ensure test results contain sufficient data
 - Verify internet connectivity
-- Check API rate limits
 
 ---
 
@@ -274,3 +271,4 @@ export default function () {
   <p><em>Last updated: September 2025</em></p>
   
 </div>
+
