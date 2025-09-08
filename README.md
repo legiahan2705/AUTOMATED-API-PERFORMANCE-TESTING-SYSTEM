@@ -2,7 +2,7 @@
 Automated API & Performance Testing with a Visual Interface  
 
 ## 🌐 Demo
-👉 [Dùng thử tại đây]([https://<project-name>.vercel.app](https://automated-api-performance-testing-s.vercel.app/))
+👉 [Dùng thử tại đây](https://automated-api-performance-testing-s.vercel.app)
 
 ---
 
@@ -41,6 +41,7 @@ Ngoài các tính năng cơ bản, hệ thống còn tích hợp **AI (Groq)** �
 - Lê Gia Hân   
 
 ---
+
 
 
 
