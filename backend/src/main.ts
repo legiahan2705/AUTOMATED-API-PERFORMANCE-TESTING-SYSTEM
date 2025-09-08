@@ -7,12 +7,27 @@ async function bootstrap() {
 
   app.enableCors({
     origin: (origin, callback) => {
-      // Regex cho tất cả FE deploy trên vercel
+      // Allow same-origin requests (scheduled tests, internal calls)
+      if (!origin) {
+        return callback(null, true);
+      }
+
+      // Allow Vercel deployments
       if (/\.vercel\.app$/.test(origin)) {
         return callback(null, true);
       }
 
-      // Nếu không khớp thì chặn
+      // Allow your production domains
+      const allowedDomains = [
+        'https://automated-api-performance-testing-system-rn51.onrender.com',
+        // Thêm các domain khác nếu cần
+      ];
+
+      if (allowedDomains.includes(origin)) {
+        return callback(null, true);
+      }
+
+      // Block other origins
       return callback(new Error('Not allowed by CORS'), false);
     },
     credentials: true,

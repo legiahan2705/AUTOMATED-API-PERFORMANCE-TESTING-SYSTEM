@@ -167,7 +167,17 @@ const TestDetailDialog: React.FC<TestDetailDialogProps> = ({
       const res = await api.get(`/test-runs/${testId}/raw-result/content`, {
         responseType: "text",
       });
-      setRawContent(res.data);
+
+      let content = res.data;
+      // Nếu là JSON thì format lại cho đẹp
+      try {
+        const parsed = JSON.parse(content);
+        content = JSON.stringify(parsed, null, 2);
+      } catch {
+        // không phải JSON thì giữ nguyên (ví dụ log dạng text)
+      }
+
+      setRawContent(content);
       setShowRawDialog(true);
     } catch (err) {
       setRawContent("Không thể tải nội dung file raw result.");
@@ -244,27 +254,19 @@ const TestDetailDialog: React.FC<TestDetailDialogProps> = ({
           </Button>
 
           {loading ? (
-            // Loading State
+            // Loading State - Simplified
             <div className="h-full flex items-center justify-center">
               <div className="text-center max-w-md">
-                {/* Animated Loading Icon */}
+                {/* Simplified Single Loading Circle */}
                 <div className="relative w-20 h-20 mx-auto mb-8">
-                  <div className="absolute inset-0 border-4 border-gray-200 rounded-full"></div>
                   <div
-                    className="absolute inset-0 border-4 border-transparent rounded-full animate-spin"
+                    className="w-full h-full border-4 border-transparent rounded-full animate-spin"
                     style={{
                       borderTopColor: "#658ec7",
-                      borderRightColor: "#c4a5c2",
-                      animationDuration: "1.5s",
-                    }}
-                  ></div>
-                  <div
-                    className="absolute inset-1 border-3 border-transparent rounded-full animate-spin"
-                    style={{
-                      borderTopColor: "#c4a5c2",
-                      borderLeftColor: "#658ec7",
-                      animationDuration: "2s",
-                      animationDirection: "reverse",
+                      borderRightColor: "#658ec7",
+                      borderLeftColor: "transparent",
+                      borderBottomColor: "transparent",
+                      animationDuration: "1s",
                     }}
                   ></div>
                   <div
@@ -286,7 +288,7 @@ const TestDetailDialog: React.FC<TestDetailDialogProps> = ({
                   performance metrics...
                 </p>
 
-                {/* Animated Progress Dots */}
+                {/* Simplified Progress Dots */}
                 <div className="flex justify-center space-x-2 mb-6">
                   <div
                     className="w-3 h-3 rounded-full animate-bounce"

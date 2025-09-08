@@ -66,6 +66,61 @@ type DetailTableProps = {
   subType?: "quick" | "script" | "postman";
 };
 
+// Component để truncate số và hiển thị tooltip
+const TruncatedNumber = ({
+  value,
+  unit = "",
+  maxLength = 8,
+}: {
+  value: string | number;
+  unit?: string;
+  maxLength?: number;
+}) => {
+  const strValue = String(value);
+  const fullText = `${strValue}${unit}`;
+
+  if (fullText.length <= maxLength) {
+    return <span className="font-mono font-semibold">{fullText}</span>;
+  }
+
+  const truncated =
+    strValue.length > maxLength - unit.length
+      ? `${strValue.slice(0, maxLength - unit.length - 1)}...`
+      : strValue;
+
+  return (
+    <span
+      className="font-mono font-semibold cursor-help border-b border-dotted border-gray-400"
+      title={fullText}
+    >
+      {truncated}
+      {unit}
+    </span>
+  );
+};
+
+// Component để truncate text với tooltip
+const TruncatedText = ({
+  text,
+  maxLength = 30,
+}: {
+  text: string;
+  maxLength?: number;
+}) => {
+  if (!text || text.length <= maxLength) {
+    return <span>{text || "-"}</span>;
+  }
+
+  return (
+    <span
+      className="cursor-help border-b border-dotted border-gray-400"
+      title={text}
+    >
+      {text.slice(0, maxLength)}...
+    </span>
+  );
+};
+
 const StatusBadge = ({ passed }: { passed: boolean }) => (
   <Badge
     className={`font-medium flex items-center ${
@@ -179,22 +234,22 @@ export const DetailTable: React.FC<DetailTableProps> = ({
             </div>
 
             <div className="overflow-x-auto max-h-[400px] overflow-y-auto">
-              <table className="w-full">
+              <table className="w-full table-fixed">
                 <thead className="bg-table-header border-b border-table-border">
                   <tr>
-                    <th className="text-left p-4 font-semibold text-foreground">
+                    <th className="text-left p-4 font-semibold text-foreground w-[250px]">
                       Endpoint
                     </th>
-                    <th className="text-left p-4 font-semibold text-foreground">
+                    <th className="text-left p-4 font-semibold text-foreground w-[100px]">
                       Method
                     </th>
-                    <th className="text-left p-4 font-semibold text-foreground">
+                    <th className="text-left p-4 font-semibold text-foreground w-[80px]">
                       Status
                     </th>
-                    <th className="text-left p-4 font-semibold text-foreground">
+                    <th className="text-left p-4 font-semibold text-foreground w-[120px]">
                       Response Time
                     </th>
-                    <th className="text-left p-4 font-semibold text-foreground">
+                    <th className="text-left p-4 font-semibold text-foreground w-[100px]">
                       Result
                     </th>
                     <th className="text-left p-4 font-semibold text-foreground">
@@ -207,7 +262,10 @@ export const DetailTable: React.FC<DetailTableProps> = ({
                     <React.Fragment key={idx}>
                       <tr className="hover:bg-table-hover transition-colors border-b border-table-border/50">
                         <td className="p-4">
-                          <code className="bg-muted px-2 py-1 rounded text-sm font-mono">
+                          <code
+                            className="bg-muted px-2 py-1 rounded text-sm font-mono block truncate"
+                            title={row.endpoint}
+                          >
                             {row.endpoint}
                           </code>
                         </td>
@@ -231,10 +289,12 @@ export const DetailTable: React.FC<DetailTableProps> = ({
                         </td>
                         <td className="p-4">
                           <div className="flex items-center gap-2">
-                            <Clock className="w-4 h-4 text-muted-foreground" />
-                            <span className="font-mono text-sm">
-                              {row.response_time}ms
-                            </span>
+                            <Clock className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                            <TruncatedNumber
+                              value={row.response_time}
+                              unit="ms"
+                              maxLength={10}
+                            />
                           </div>
                         </td>
                         <td className="p-4">
@@ -242,7 +302,10 @@ export const DetailTable: React.FC<DetailTableProps> = ({
                         </td>
                         <td className="p-4">
                           {row.error_message ? (
-                            <div className="text-destructive text-sm bg-destructive/10 px-2 py-1 rounded">
+                            <div
+                              className="text-destructive text-sm bg-destructive/10 px-2 py-1 rounded truncate cursor-help"
+                              title={row.error_message}
+                            >
                               {row.error_message}
                             </div>
                           ) : (
@@ -314,19 +377,19 @@ export const DetailTable: React.FC<DetailTableProps> = ({
             </div>
 
             <div className="overflow-x-auto max-h-[400px] overflow-y-auto">
-              <table className="w-full">
+              <table className="w-full table-fixed">
                 <thead className="bg-table-header border-b border-table-border">
                   <tr>
-                    <th className="text-left p-4 font-semibold text-foreground">
+                    <th className="text-left p-4 font-semibold text-foreground w-[200px]">
                       Metric
                     </th>
-                    <th className="text-left p-4 font-semibold text-foreground">
+                    <th className="text-left p-4 font-semibold text-foreground w-[250px]">
                       Description
                     </th>
-                    <th className="text-left p-4 font-semibold text-foreground">
+                    <th className="text-left p-4 font-semibold text-foreground w-[120px]">
                       Category
                     </th>
-                    <th className="text-left p-4 font-semibold text-foreground">
+                    <th className="text-left p-4 font-semibold text-foreground w-[150px]">
                       Value
                     </th>
                   </tr>
@@ -336,18 +399,25 @@ export const DetailTable: React.FC<DetailTableProps> = ({
                     <React.Fragment key={idx}>
                       <tr className="hover:bg-table-hover transition-colors border-b border-table-border/50">
                         <td className="p-4">
-                          <div className="font-medium text-foreground">
+                          <div
+                            className="font-medium text-foreground truncate"
+                            title={row.metric_name}
+                          >
                             {row.metric_name}
                           </div>
                         </td>
                         <td className="p-4">
-                          <div className="text-sm text-muted-foreground max-w-xs">
-                            {row.description || "-"}
-                          </div>
+                          <TruncatedText
+                            text={row.description || ""}
+                            maxLength={40}
+                          />
                         </td>
                         <td className="p-4">
                           {row.category ? (
-                            <Badge variant="secondary" className="font-medium">
+                            <Badge
+                              variant="secondary"
+                              className="font-medium truncate"
+                            >
                               {row.category}
                             </Badge>
                           ) : (
@@ -356,15 +426,12 @@ export const DetailTable: React.FC<DetailTableProps> = ({
                         </td>
                         <td className="p-4">
                           <div className="flex items-center gap-2">
-                            <BarChart3 className="w-4 h-4 text-muted-foreground" />
-                            <span className="font-mono font-semibold text-lg">
-                              {row.value}
-                            </span>
-                            {row.unit && (
-                              <span className="text-muted-foreground text-sm">
-                                {row.unit}
-                              </span>
-                            )}
+                            <BarChart3 className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                            <TruncatedNumber
+                              value={row.value}
+                              unit={row.unit ? ` ${row.unit}` : ""}
+                              maxLength={12}
+                            />
                           </div>
                         </td>
                       </tr>
@@ -438,25 +505,25 @@ export const DetailTable: React.FC<DetailTableProps> = ({
                     <th className="text-left p-4 font-semibold text-foreground w-[200px]">
                       Name
                     </th>
-                    <th className="text-left p-4 font-semibold text-foreground">
+                    <th className="text-left p-4 font-semibold text-foreground w-[100px]">
                       Avg
                     </th>
-                    <th className="text-left p-4 font-semibold text-foreground">
+                    <th className="text-left p-4 font-semibold text-foreground w-[100px]">
                       Min
                     </th>
-                    <th className="text-left p-4 font-semibold text-foreground">
+                    <th className="text-left p-4 font-semibold text-foreground w-[100px]">
                       Max
                     </th>
-                    <th className="text-left p-4 font-semibold text-foreground">
+                    <th className="text-left p-4 font-semibold text-foreground w-[100px]">
                       P90
                     </th>
-                    <th className="text-left p-4 font-semibold text-foreground">
+                    <th className="text-left p-4 font-semibold text-foreground w-[100px]">
                       P95
                     </th>
-                    <th className="text-left p-4 font-semibold text-foreground">
+                    <th className="text-left p-4 font-semibold text-foreground w-[100px]">
                       Rate
                     </th>
-                    <th className="text-left p-4 font-semibold text-foreground">
+                    <th className="text-left p-4 font-semibold text-foreground w-[120px]">
                       Value
                     </th>
                   </tr>
@@ -465,32 +532,35 @@ export const DetailTable: React.FC<DetailTableProps> = ({
                   {metrics.map((m: ScriptDetail, idx: number) => (
                     <React.Fragment key={idx}>
                       <tr className="hover:bg-table-hover transition-colors border-b border-table-border/50">
-                        <td
-  className="p-4 font-medium max-w-[200px] truncate"
-  title={m.name}
->
-  {m.name}
-</td>
-                        <td className="p-4 font-mono text-sm">
-                          {m.avg || "-"}
+                        <td className="p-4 font-medium truncate" title={m.name}>
+                          {m.name}
                         </td>
-                        <td className="p-4 font-mono text-sm">
-                          {m.min || "-"}
+                        <td className="p-4">
+                          <TruncatedNumber value={m.avg || "-"} maxLength={8} />
                         </td>
-                        <td className="p-4 font-mono text-sm">
-                          {m.max || "-"}
+                        <td className="p-4">
+                          <TruncatedNumber value={m.min || "-"} maxLength={8} />
                         </td>
-                        <td className="p-4 font-mono text-sm">
-                          {m.p90 || "-"}
+                        <td className="p-4">
+                          <TruncatedNumber value={m.max || "-"} maxLength={8} />
                         </td>
-                        <td className="p-4 font-mono text-sm">
-                          {m.p95 || "-"}
+                        <td className="p-4">
+                          <TruncatedNumber value={m.p90 || "-"} maxLength={8} />
                         </td>
-                        <td className="p-4 font-mono text-sm">
-                          {m.rate || "-"}
+                        <td className="p-4">
+                          <TruncatedNumber value={m.p95 || "-"} maxLength={8} />
                         </td>
-                        <td className="p-4 font-mono text-sm font-semibold">
-                          {m.value || "-"}
+                        <td className="p-4">
+                          <TruncatedNumber
+                            value={m.rate || "-"}
+                            maxLength={8}
+                          />
+                        </td>
+                        <td className="p-4">
+                          <TruncatedNumber
+                            value={m.value || "-"}
+                            maxLength={10}
+                          />
                         </td>
                       </tr>
                       {renderRawRow(m, 8)}
@@ -525,7 +595,12 @@ export const DetailTable: React.FC<DetailTableProps> = ({
                 return (
                   <React.Fragment key={idx}>
                     <div className="border rounded-lg p-4 space-y-3">
-                      <h4 className="font-medium text-sm">{c.name}</h4>
+                      <h4
+                        className="font-medium text-sm truncate"
+                        title={c.name}
+                      >
+                        {c.name}
+                      </h4>
                       <div className="flex justify-between items-center">
                         <span className="text-xs text-muted-foreground">
                           Success Rate

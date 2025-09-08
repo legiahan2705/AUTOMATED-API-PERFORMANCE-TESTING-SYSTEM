@@ -87,8 +87,6 @@ const ProjectDetailsDialog: React.FC<ProjectDetailsDialogProps> = ({
 
   const [refreshTrigger, setRefreshTrigger] = useState(0);
 
-  
-
   useEffect(() => {
     if (open) {
       document.body.classList.add("overflow-hidden");
@@ -120,11 +118,8 @@ const ProjectDetailsDialog: React.FC<ProjectDetailsDialogProps> = ({
 
   const handleViewFile = async (filePath: string, fileName: string) => {
     try {
-      const relativePath = filePath.split("uploads")[1]; // Lấy phần sau "uploads"
-      const safePath = `uploads${relativePath}`;
-
       const res = await api.get("/project/view-file", {
-        params: { path: safePath },
+        params: { path: filePath }, // truyền nguyên gs://...
         responseType: "text",
       });
 
@@ -286,7 +281,9 @@ const ProjectDetailsDialog: React.FC<ProjectDetailsDialogProps> = ({
 
         <div className="flex items-center gap-2 mb-4">
           <FolderOpen className="w-7 h-7 text-[#658ec7]" />
-          <h2 className="text-[30px] font-bold text-[#658ec7] font-[var(--font-nunito)]">Project Details</h2>
+          <h2 className="text-[30px] font-bold text-[#658ec7] font-[var(--font-nunito)]">
+            Project Details
+          </h2>
         </div>
 
         {/* Project Information */}
@@ -322,7 +319,6 @@ const ProjectDetailsDialog: React.FC<ProjectDetailsDialogProps> = ({
                     variant="ghost"
                     size="sm"
                     onClick={() => setIsEditingName(false)}
-                    
                   >
                     Cancel
                   </Button>
@@ -333,8 +329,8 @@ const ProjectDetailsDialog: React.FC<ProjectDetailsDialogProps> = ({
                   <Button
                     variant="ghost"
                     size="icon"
-                      onClick={() => setIsEditingName(true)}
-                      className="hover:bg-[#c4a5c2] hover:text-white"
+                    onClick={() => setIsEditingName(true)}
+                    className="hover:bg-[#c4a5c2] hover:text-white"
                   >
                     <Pencil className="w-4 h-4 " />
                   </Button>
@@ -346,7 +342,7 @@ const ProjectDetailsDialog: React.FC<ProjectDetailsDialogProps> = ({
           {/* Description */}
           <div>
             <label className="text-sm font-medium flex items-center gap-1 text-white/80">
-              Description 
+              Description
             </label>
             <div className="flex gap-2 items-start mt-1">
               {isEditingDesc ? (
@@ -354,7 +350,7 @@ const ProjectDetailsDialog: React.FC<ProjectDetailsDialogProps> = ({
                   <Textarea
                     placeholder="Brief description of your testing project"
                     className="placeholder:text-[#b9c4d3]"
-                    value={description} 
+                    value={description}
                     onChange={(e) => setDescription(e.target.value)}
                   />
                   <div className="flex gap-2 pt-1">
@@ -364,7 +360,7 @@ const ProjectDetailsDialog: React.FC<ProjectDetailsDialogProps> = ({
                         handleSaveField("description", description ?? "");
                         setIsEditingDesc(false);
                       }}
-                       className="hover:bg-[#c4a5c2] bg-[#cae0ffb5]"
+                      className="hover:bg-[#c4a5c2] bg-[#cae0ffb5]"
                     >
                       Save
                     </Button>
@@ -385,8 +381,8 @@ const ProjectDetailsDialog: React.FC<ProjectDetailsDialogProps> = ({
                   <Button
                     variant="ghost"
                     size="icon"
-                      onClick={() => setIsEditingDesc(true)}
-                      className="hover:bg-[#c4a5c2] hover:text-white"
+                    onClick={() => setIsEditingDesc(true)}
+                    className="hover:bg-[#c4a5c2] hover:text-white"
                   >
                     <Pencil className="w-4 h-4" />
                   </Button>
@@ -419,7 +415,9 @@ const ProjectDetailsDialog: React.FC<ProjectDetailsDialogProps> = ({
           <div className="border rounded-xl p-5 bg-white flex flex-col gap-2 shadow-sm">
             <div className="flex items-center gap-2">
               <UploadCloud className="w-5 h-5  text-[#658ec7]" />
-              <h4 className="font-medium text-[#658ec7]">Postman Collection Test</h4>
+              <h4 className="font-medium text-[#658ec7]">
+                Postman Collection Test
+              </h4>
             </div>
 
             <label className="text-sm text-muted-foreground">File:</label>
@@ -477,7 +475,7 @@ const ProjectDetailsDialog: React.FC<ProjectDetailsDialogProps> = ({
                         handleUpdateFile(newPostmanFile, "postman");
                         setIsEditingPostmanFile(false);
                       }
-                      }}
+                    }}
                     className="hover:bg-[#c4a5c2] bg-[#658ec7]"
                   >
                     Save
@@ -488,7 +486,7 @@ const ProjectDetailsDialog: React.FC<ProjectDetailsDialogProps> = ({
                     onClick={() => {
                       setIsEditingPostmanFile(false);
                       setNewPostmanFile(null);
-                      }}
+                    }}
                     className=" hover:text-black"
                   >
                     Cancel
@@ -502,23 +500,24 @@ const ProjectDetailsDialog: React.FC<ProjectDetailsDialogProps> = ({
               size="sm"
               onClick={handleTestPostman}
               disabled={isRunningPostman}
-              
             >
               Run Postman Test
             </Button>
             {isRunningPostman && (
-            <div className="flex items-center justify-center mt-2 text-sm text-gray-600">
-              <Loader className="animate-spin w-5 h-5 text-primary" />
-              <span className="ml-2 italic">Running...</span>
-            </div>
-          )}
+              <div className="flex items-center justify-center mt-2 text-sm text-gray-600">
+                <Loader className="animate-spin w-5 h-5 text-primary" />
+                <span className="ml-2 italic">Running...</span>
+              </div>
+            )}
           </div>
 
           {/* Quick Test */}
           <div className="border rounded-xl p-5 bg-white flex flex-col gap-3 shadow-sm">
             <div className="flex items-center gap-2">
               <Zap className="w-5 h-5 text-[#658ec7]" />
-              <h4 className="font-medium text-[#658ec7]">Quick Performance Test</h4>
+              <h4 className="font-medium text-[#658ec7]">
+                Quick Performance Test
+              </h4>
             </div>
 
             {/* API URL */}
@@ -558,8 +557,8 @@ const ProjectDetailsDialog: React.FC<ProjectDetailsDialogProps> = ({
                     <Button
                       variant="ghost"
                       size="icon"
-                        onClick={() => setIsEditingApiUrl(true)}
-                        className="hover:bg-[#c4a5c2] hover:text-white"
+                      onClick={() => setIsEditingApiUrl(true)}
+                      className="hover:bg-[#c4a5c2] hover:text-white"
                     >
                       <Pencil className="w-4 h-4 " />
                     </Button>
@@ -614,8 +613,8 @@ const ProjectDetailsDialog: React.FC<ProjectDetailsDialogProps> = ({
                         <Button
                           variant="ghost"
                           size="icon"
-                            onClick={() => setIsEditingMethod(true)}
-                            className="hover:bg-[#c4a5c2] hover:text-white"
+                          onClick={() => setIsEditingMethod(true)}
+                          className="hover:bg-[#c4a5c2] hover:text-white"
                         >
                           <Pencil className="w-4 h-4" />
                         </Button>
@@ -665,8 +664,8 @@ const ProjectDetailsDialog: React.FC<ProjectDetailsDialogProps> = ({
                         <Button
                           variant="ghost"
                           size="icon"
-                            onClick={() => setIsEditingVus(true)}
-                            className="hover:bg-[#c4a5c2] hover:text-white"
+                          onClick={() => setIsEditingVus(true)}
+                          className="hover:bg-[#c4a5c2] hover:text-white"
                         >
                           <Pencil className="w-4 h-4" />
                         </Button>
@@ -735,8 +734,8 @@ const ProjectDetailsDialog: React.FC<ProjectDetailsDialogProps> = ({
                         <Button
                           variant="ghost"
                           size="icon"
-                            onClick={() => setIsEditingDuration(true)}
-                            className="hover:bg-[#c4a5c2] hover:text-white"
+                          onClick={() => setIsEditingDuration(true)}
+                          className="hover:bg-[#c4a5c2] hover:text-white"
                         >
                           <Pencil className="w-4 h-4" />
                         </Button>
@@ -792,8 +791,8 @@ const ProjectDetailsDialog: React.FC<ProjectDetailsDialogProps> = ({
                       <Button
                         variant="ghost"
                         size="icon"
-                          onClick={() => setIsEditingHeaders(true)}
-                          className="hover:bg-[#c4a5c2] hover:text-white"
+                        onClick={() => setIsEditingHeaders(true)}
+                        className="hover:bg-[#c4a5c2] hover:text-white"
                       >
                         <Pencil className="w-4 h-4" />
                       </Button>
@@ -849,8 +848,8 @@ const ProjectDetailsDialog: React.FC<ProjectDetailsDialogProps> = ({
                       <Button
                         variant="ghost"
                         size="icon"
-                          onClick={() => setIsEditingBody(true)}
-                          className="hover:bg-[#c4a5c2] hover:text-white"
+                        onClick={() => setIsEditingBody(true)}
+                        className="hover:bg-[#c4a5c2] hover:text-white"
                       >
                         <Pencil className="w-4 h-4" />
                       </Button>
@@ -938,7 +937,7 @@ const ProjectDetailsDialog: React.FC<ProjectDetailsDialogProps> = ({
                         handleUpdateFile(newK6File, "k6");
                         setIsEditingK6File(false);
                       }
-                      }}
+                    }}
                     className="hover:bg-[#c4a5c2] bg-[#658ec7]"
                   >
                     Save
