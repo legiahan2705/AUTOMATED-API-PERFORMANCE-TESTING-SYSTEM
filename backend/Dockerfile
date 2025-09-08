@@ -1,0 +1,26 @@
+# Chọn Node.js base image
+FROM node:20
+
+# Cài k6
+RUN apt-get update && apt-get install -y gnupg software-properties-common \
+    && wget -q -O - https://dl.k6.io/key.gpg | gpg --dearmor | tee /usr/share/keyrings/k6-archive-keyring.gpg \
+    && echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main" | tee /etc/apt/sources.list.d/k6.list \
+    && apt-get update && apt-get install -y k6
+
+# Tạo thư mục làm việc
+WORKDIR /app
+
+# Copy package.json & package-lock.json
+COPY package*.json ./
+
+# Cài dependencies
+RUN npm install
+
+# Copy toàn bộ code
+COPY . .
+
+# Build NestJS
+RUN npm run build
+
+# Chạy backend
+CMD ["node", "dist/main.js"]
