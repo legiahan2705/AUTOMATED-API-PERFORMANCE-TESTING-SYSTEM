@@ -51,7 +51,7 @@ import {
 } from "lucide-react";
 import { IconCalendarClock } from "@tabler/icons-react";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "https://automated-api-performance-testing-system.onrender.com";
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "https://automated-api-performance-testing-system-rn51.onrender.com";
 
 interface Project {
   id: number;
