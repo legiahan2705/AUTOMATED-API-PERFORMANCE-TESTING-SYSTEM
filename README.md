@@ -114,30 +114,173 @@ Beautiful interactive charts and graphs powered by Chart.js make it easy to unde
 **Example Collection Structure:**
 ```json
 {
-  "info": { 
-    "name": "E-commerce API Test Suite",
+  "info": {
+    "name": "Sample Project API Collection",
+    "_postman_id": "12345678-abcd-efgh-ijkl-987654321000",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "item": [
     {
-      "name": "Authentication",
+      "name": "Get All Users",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "https://jsonplaceholder.typicode.com/users",
+          "protocol": "https",
+          "host": ["jsonplaceholder", "typicode", "com"],
+          "path": ["users"]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"Status code is 200\", function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "pm.test(\"Response is an array\", function () {",
+              "    var jsonData = pm.response.json();",
+              "    pm.expect(Array.isArray(jsonData)).to.be.true;",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Get User By ID",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "https://jsonplaceholder.typicode.com/users/1",
+          "protocol": "https",
+          "host": ["jsonplaceholder", "typicode", "com"],
+          "path": ["users", "1"]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"Status code is 200\", function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "pm.test(\"User has id=1\", function () {",
+              "    var jsonData = pm.response.json();",
+              "    pm.expect(jsonData.id).to.eql(1);",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Create New Post",
       "request": {
         "method": "POST",
-        "url": "{{base_url}}/auth/login",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
         "body": {
           "mode": "raw",
-          "raw": "{\"email\":\"test@example.com\",\"password\":\"password123\"}"
+          "raw": "{\n  \"title\": \"foo\",\n  \"body\": \"bar\",\n  \"userId\": 1\n}"
+        },
+        "url": {
+          "raw": "https://jsonplaceholder.typicode.com/posts",
+          "protocol": "https",
+          "host": ["jsonplaceholder", "typicode", "com"],
+          "path": ["posts"]
         }
-      }
-    }
-  ],
-  "variable": [
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"Status code is 201\", function () {",
+              "    pm.response.to.have.status(201);",
+              "});",
+              "pm.test(\"Response contains title\", function () {",
+              "    var jsonData = pm.response.json();",
+              "    pm.expect(jsonData).to.have.property('title');",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ]
+    },
     {
-      "key": "base_url",
-      "value": "https://api.example.com/v1"
+      "name": "Update Post",
+      "request": {
+        "method": "PUT",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"id\": 1,\n  \"title\": \"updated title\",\n  \"body\": \"updated body\",\n  \"userId\": 1\n}"
+        },
+        "url": {
+          "raw": "https://jsonplaceholder.typicode.com/posts/1",
+          "protocol": "https",
+          "host": ["jsonplaceholder", "typicode", "com"],
+          "path": ["posts", "1"]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"Status code is 200\", function () {",
+              "    pm.response.to.have.status(200);",
+              "});",
+              "pm.test(\"Title is updated\", function () {",
+              "    var jsonData = pm.response.json();",
+              "    pm.expect(jsonData.title).to.eql('updated title');",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Delete Post",
+      "request": {
+        "method": "DELETE",
+        "header": [],
+        "url": {
+          "raw": "https://jsonplaceholder.typicode.com/posts/1",
+          "protocol": "https",
+          "host": ["jsonplaceholder", "typicode", "com"],
+          "path": ["posts", "1"]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test(\"Status code is 200\", function () {",
+              "    pm.response.to.have.status(200);",
+              "});"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ]
     }
   ]
 }
+
 ```
 
 ### 2. 🚄 K6 Performance Testing
@@ -158,34 +301,71 @@ Beautiful interactive charts and graphs powered by Chart.js make it easy to unde
 ```javascript
 import http from 'k6/http';
 import { check, sleep } from 'k6';
-import { Rate } from 'k6/metrics';
 
-// Custom metrics
-export let errorRate = new Rate('errors');
-
+// Cấu hình test
 export let options = {
-  stages: [
-    { duration: '2m', target: 10 }, // Ramp up
-    { duration: '5m', target: 10 }, // Stay at 10 users
-    { duration: '2m', target: 0 },  // Ramp down
-  ],
-  thresholds: {
-    http_req_duration: ['p(95)<500'], // 95% of requests under 500ms
-    errors: ['rate<0.1'], // Error rate under 10%
+  vus: 10,            // số user ảo
+  duration: '30s',    // thời gian chạy test
+  thresholds: {       // ngưỡng để đánh giá kết quả
+    http_req_duration: ['p(95)<500'], // 95% request phải dưới 500ms
+    http_req_failed: ['rate<0.01'],   // < 1% request bị fail
   },
 };
 
 export default function () {
-  const response = http.get('https://api.example.com/products');
-  
-  check(response, {
-    'status is 200': (r) => r.status === 200,
-    'response time < 500ms': (r) => r.timings.duration < 500,
-    'has products': (r) => JSON.parse(r.body).products.length > 0,
-  }) || errorRate.add(1);
-  
-  sleep(Math.random() * 3 + 1); // Random sleep 1-4 seconds
+  // Base URL (thay bằng API của bạn)
+  const BASE_URL = 'https://jsonplaceholder.typicode.com';
+
+  // 1️. GET request (lấy danh sách posts)
+  let res = http.get(`${BASE_URL}/posts`);
+  check(res, {
+    'status 200': (r) => r.status === 200,
+    'body not empty': (r) => r.body && r.body.length > 0,
+  });
+
+  sleep(1);
+
+  // 2️. POST request (tạo mới 1 post)
+  const payload = JSON.stringify({
+    title: 'foo',
+    body: 'bar',
+    userId: 1,
+  });
+
+  const headers = { 'Content-Type': 'application/json' };
+
+  res = http.post(`${BASE_URL}/posts`, payload, { headers });
+  check(res, {
+    'status 201': (r) => r.status === 201,
+    'has id': (r) => JSON.parse(r.body).id !== undefined,
+  });
+
+  sleep(1);
+
+  // 3️. PUT request (update post id=1)
+  const updatePayload = JSON.stringify({
+    id: 1,
+    title: 'updated title',
+    body: 'updated body',
+    userId: 1,
+  });
+
+  res = http.put(`${BASE_URL}/posts/1`, updatePayload, { headers });
+  check(res, {
+    'status 200': (r) => r.status === 200,
+  });
+
+  sleep(1);
+
+  // 4️. DELETE request (xóa post id=1)
+  res = http.del(`${BASE_URL}/posts/1`);
+  check(res, {
+    'status 200 or 204': (r) => r.status === 200 || r.status === 204,
+  });
+
+  sleep(1);
 }
+
 ```
 
 ### 3. ⚡ Quick Test Setup
@@ -201,19 +381,19 @@ export default function () {
 **Example Quick Test Configuration:**
 ```json
 {
-  "apiUrl": "https://api.example.com/users",
+  "apiUrl": "https://jsonplaceholder.typicode.com/posts",
   "method": "POST",
   "headers": {
     "Content-Type": "application/json",
     "Authorization": "Bearer your-token-here"
   },
   "body": {
-    "name": "John Doe",
-    "email": "john.doe@example.com",
-    "role": "user"
+   "title": "foo",
+   "body": "bar",
+   "userId": 1
   },
-  "vus": 10,
-  "duration": "60s"
+  "vus": 5,
+  "duration": "30s"
 }
 ```
 
@@ -271,4 +451,5 @@ export default function () {
   <p><em>Last updated: September 2025</em></p>
   
 </div>
+
 
