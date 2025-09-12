@@ -33,16 +33,19 @@ export class ScheduledTestsService {
     private readonly gcsService: GcsService, // Add GcsService injection
   ) {}
 
-  async handleFileUpload(file: Express.Multer.File, subType: string): Promise<string> {
+  async handleFileUpload(
+    file: Express.Multer.File,
+    subType: string,
+  ): Promise<string> {
     // Generate unique filename
     const timestamp = Date.now();
     const fileName = `${timestamp}_${file.originalname}`;
-    
+
     // Upload to GCS in schedule folder
     const gcsPath = await this.gcsService.uploadFile(
       file,
       fileName,
-      `schedule/${subType}`
+      `schedule/${subType}`,
     );
 
     this.logger.log(`File uploaded to GCS: ${gcsPath}`);
@@ -76,7 +79,11 @@ export class ScheduledTestsService {
     return saved;
   }
 
-  async update(id: number, dto: UpdateScheduledTestDto, file?: Express.Multer.File) {
+  async update(
+    id: number,
+    dto: UpdateScheduledTestDto,
+    file?: Express.Multer.File,
+  ) {
     const schedule = await this.findOne(id);
     if (!schedule) throw new Error(`Schedule #${id} not found`);
 
@@ -92,7 +99,10 @@ export class ScheduledTestsService {
       }
 
       // Upload new file
-      const gcsPath = await this.handleFileUpload(file, dto.subType ?? schedule.subType);
+      const gcsPath = await this.handleFileUpload(
+        file,
+        dto.subType ?? schedule.subType,
+      );
       dto.inputFilePath = gcsPath;
     }
 
@@ -107,8 +117,17 @@ export class ScheduledTestsService {
     return updated;
   }
 
-  findAll() {
-    return this.scheduledTestsRepo.find({ relations: ['project', 'user'] });
+  findAll(userId?: number) {
+    const query = this.scheduledTestsRepo
+      .createQueryBuilder('st')
+      .leftJoinAndSelect('st.project', 'project')
+      .leftJoinAndSelect('st.user', 'user');
+
+    if (userId) {
+      query.where('st.userId = :userId', { userId });
+    }
+
+    return query.getMany();
   }
 
   async findOne(id: number): Promise<ScheduledTest | undefined> {
@@ -122,7 +141,7 @@ export class ScheduledTestsService {
 
   async remove(id: number) {
     const schedule = await this.findOne(id);
-    
+
     // Delete associated file from GCS
     if (schedule?.inputFilePath) {
       try {
@@ -148,7 +167,8 @@ export class ScheduledTestsService {
 
       try {
         let url = '';
-        const baseUrl = process.env.TEST_RUN_API_BASE || 'http://localhost:3000';
+        const baseUrl =
+          process.env.TEST_RUN_API_BASE || 'http://localhost:3000';
         if (schedule.subType === 'postman') {
           url = `${baseUrl}/test-run/postman/${schedule.projectId}?scheduleId=${schedule.id}`;
         } else if (schedule.subType === 'quick') {
@@ -171,7 +191,6 @@ export class ScheduledTestsService {
 
         // **DELAY REPORT GENERATION để đảm bảo data đã được lưu**
         this.scheduleReportGeneration(testRunId, schedule);
-
       } catch (err: any) {
         this.logger.error(
           `Lỗi khi chạy test cho schedule #${schedule.id}: ${err.message}`,
@@ -183,7 +202,9 @@ export class ScheduledTestsService {
             schedule,
             err.message,
           );
-          this.logger.log(`Error notification email sent to ${schedule.emailTo}`);
+          this.logger.log(
+            `Error notification email sent to ${schedule.emailTo}`,
+          );
         }
       }
     });
@@ -198,7 +219,7 @@ export class ScheduledTestsService {
   private scheduleReportGeneration(testRunId: number, schedule: ScheduledTest) {
     // Delay 10 giây trước khi bắt đầu tạo report
     const delayMs = 10000; // 10 seconds
-    
+
     setTimeout(async () => {
       await this.generateReportWithRetry(testRunId, schedule);
     }, delayMs);
@@ -208,40 +229,44 @@ export class ScheduledTestsService {
    * Tạo PDF report với retry mechanism
    */
   private async generateReportWithRetry(
-    testRunId: number, 
-    schedule: ScheduledTest, 
-    maxRetries: number = 3
+    testRunId: number,
+    schedule: ScheduledTest,
+    maxRetries: number = 3,
   ) {
     let attempt = 0;
-    
+
     while (attempt < maxRetries) {
       attempt++;
-      
+
       try {
         this.logger.log(
-          `Bắt đầu tạo PDF report cho test run #${testRunId} (attempt ${attempt}/${maxRetries})`
+          `Bắt đầu tạo PDF report cho test run #${testRunId} (attempt ${attempt}/${maxRetries})`,
         );
 
         // Kiểm tra xem test run đã có đầy đủ data chưa
         const isDataReady = await this.verifyTestRunDataReady(testRunId);
-        
+
         if (!isDataReady && attempt < maxRetries) {
           this.logger.warn(
-            `Test run #${testRunId} data chưa sẵn sàng, retry sau 15s (attempt ${attempt})`
+            `Test run #${testRunId} data chưa sẵn sàng, retry sau 15s (attempt ${attempt})`,
           );
           await this.delay(15000); // Wait 15s before retry
           continue;
         }
 
         // Lấy chi tiết test run từ database
-        const testDetail = await this.testRunService.getTestRunDetails(testRunId);
+        const testDetail =
+          await this.testRunService.getTestRunDetails(testRunId);
 
         if (!testDetail || !testDetail.testRun) {
-          throw new Error(`Không tìm thấy test run detail cho ID: ${testRunId}`);
+          throw new Error(
+            `Không tìm thấy test run detail cho ID: ${testRunId}`,
+          );
         }
 
         // Tạo PDF report với data structure phù hợp - returns GCS path now
-        const reportGcsPath = await this.reportsService.generateScheduledTestPDF(testDetail);
+        const reportGcsPath =
+          await this.reportsService.generateScheduledTestPDF(testDetail);
 
         this.logger.log(`PDF report đã được tạo thành công: ${reportGcsPath}`);
 
@@ -258,7 +283,6 @@ export class ScheduledTestsService {
 
         // Thành công, thoát khỏi retry loop
         return;
-
       } catch (error) {
         this.logger.error(
           `Lỗi khi tạo PDF report cho test run #${testRunId} (attempt ${attempt}): ${error.message}`,
@@ -266,11 +290,14 @@ export class ScheduledTestsService {
 
         if (attempt === maxRetries) {
           this.logger.error(
-            `Đã thử ${maxRetries} lần nhưng vẫn không thể tạo PDF report cho test run #${testRunId}`
+            `Đã thử ${maxRetries} lần nhưng vẫn không thể tạo PDF report cho test run #${testRunId}`,
           );
 
           // Gửi email thông báo lỗi report generation nếu method tồn tại
-          if (schedule.emailTo && 'sendReportGenerationError' in this.emailService) {
+          if (
+            schedule.emailTo &&
+            'sendReportGenerationError' in this.emailService
+          ) {
             try {
               await (this.emailService as any).sendReportGenerationError(
                 schedule.emailTo,
@@ -278,7 +305,9 @@ export class ScheduledTestsService {
                 error.message,
               );
             } catch (emailError) {
-              this.logger.error(`Failed to send report generation error email: ${emailError.message}`);
+              this.logger.error(
+                `Failed to send report generation error email: ${emailError.message}`,
+              );
             }
           } else {
             // Fallback: sử dụng sendScheduledTestError nếu sendReportGenerationError không tồn tại
@@ -289,7 +318,9 @@ export class ScheduledTestsService {
                 `Report generation failed after ${maxRetries} attempts: ${error.message}`,
               );
             } catch (emailError) {
-              this.logger.error(`Failed to send error notification email: ${emailError.message}`);
+              this.logger.error(
+                `Failed to send error notification email: ${emailError.message}`,
+              );
             }
           }
         } else {
@@ -306,48 +337,56 @@ export class ScheduledTestsService {
   private async verifyTestRunDataReady(testRunId: number): Promise<boolean> {
     try {
       const testDetail = await this.testRunService.getTestRunDetails(testRunId);
-      
+
       if (!testDetail || !testDetail.testRun) {
         return false;
       }
 
       const testRun = testDetail.testRun;
-      
+
       // Kiểm tra các file paths có tồn tại không trong GCS
       const requiredChecks: boolean[] = [];
-      
+
       if (testRun.summary_path) {
-        const summaryExists = await this.gcsService.fileExists(testRun.summary_path);
+        const summaryExists = await this.gcsService.fileExists(
+          testRun.summary_path,
+        );
         requiredChecks.push(summaryExists);
       }
-      
+
       if (testRun.raw_result_path) {
-        const rawResultExists = await this.gcsService.fileExists(testRun.raw_result_path);
+        const rawResultExists = await this.gcsService.fileExists(
+          testRun.raw_result_path,
+        );
         requiredChecks.push(rawResultExists);
       }
 
       // Kiểm tra có summary data không
-      const hasSummaryData = testDetail.summary && Object.keys(testDetail.summary).length > 0;
+      const hasSummaryData =
+        testDetail.summary && Object.keys(testDetail.summary).length > 0;
       requiredChecks.push(hasSummaryData);
 
       // Kiểm tra details data dựa trên sub_type
       let hasDetailsData = true;
-      if (testRun.sub_type === 'postman' || testRun.sub_type === 'quick' || testRun.sub_type === 'script') {
+      if (
+        testRun.sub_type === 'postman' ||
+        testRun.sub_type === 'quick' ||
+        testRun.sub_type === 'script'
+      ) {
         hasDetailsData = testDetail.details && testDetail.details.length > 0;
         requiredChecks.push(hasDetailsData);
       }
 
-      const allReady = requiredChecks.every(check => check === true);
-      
+      const allReady = requiredChecks.every((check) => check === true);
+
       this.logger.debug(
-        `Test run #${testRunId} data ready check: ${allReady} (${requiredChecks.length} checks passed)`
+        `Test run #${testRunId} data ready check: ${allReady} (${requiredChecks.length} checks passed)`,
       );
 
       return allReady;
-
     } catch (error) {
       this.logger.warn(
-        `Error checking test run #${testRunId} data readiness: ${error.message}`
+        `Error checking test run #${testRunId} data readiness: ${error.message}`,
       );
       return false;
     }
@@ -357,7 +396,7 @@ export class ScheduledTestsService {
    * Utility function để delay execution
    */
   private delay(ms: number): Promise<void> {
-    return new Promise(resolve => setTimeout(resolve, ms));
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
   private removeCronJob(id: number) {

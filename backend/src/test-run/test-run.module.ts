@@ -8,12 +8,11 @@ import { PerfScriptResultDetail } from './entities/perf_script_result_detail.ent
 import { Project } from 'src/project/entities/project.entity';
 
 import { PostmanTestController } from './controllers/postman-test.controller';
-import { QuickPerformanceTestController } from './controllers/quick-test.controller'; 
+import { QuickPerformanceTestController } from './controllers/quick-test.controller';
 import { K6ScriptTestController } from './controllers/k6-script-test.controller';
 
-
 import { PostmanTestService } from './services/postman-test.service';
-import { QuickPerformanceTestService } from './services/quick-test.service'; 
+import { QuickPerformanceTestService } from './services/quick-test.service';
 import { K6ScriptTestService } from './services/k6-script-test.service';
 import { TestRunController } from './test-run.controller';
 import { TestRunService } from './test-run.service';
@@ -22,25 +21,30 @@ import { ScheduledTest } from 'src/scheduled-test/entities/scheduled-test.entity
 import { AiAnalysisModule } from 'src/ai_analysis/ai-analysis.module';
 import { GcsService } from 'src/project/gcs.service';
 
-
 @Module({
-  imports: [TypeOrmModule.forFeature([
-    TestRun, ApiResultDetail, PerfQuickResultDetail, Project, PerfScriptResultDetail, ScheduledTest
-  ]) ,AiAnalysisModule,], 
+  imports: [
+    TypeOrmModule.forFeature([
+      TestRun,
+      ApiResultDetail,
+      PerfQuickResultDetail,
+      Project,
+      PerfScriptResultDetail,
+      ScheduledTest,
+    ]),
+    AiAnalysisModule,
+  ],
   controllers: [
     PostmanTestController,
-    QuickPerformanceTestController, 
+    QuickPerformanceTestController,
     K6ScriptTestController,
     TestRunController,
-  
   ],
   providers: [
     PostmanTestService,
-    QuickPerformanceTestService, 
+    QuickPerformanceTestService,
     K6ScriptTestService,
     TestRunService,
-     GcsService
-  
+    GcsService,
   ],
   exports: [TestRunService],
 })

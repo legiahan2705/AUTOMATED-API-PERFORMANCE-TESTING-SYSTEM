@@ -51,11 +51,18 @@ export class TestRunService {
         // Read summary from GCS
         if (testRun.summary_path) {
           try {
-            const fileExists = await this.gcsService.fileExists(testRun.summary_path);
+            const fileExists = await this.gcsService.fileExists(
+              testRun.summary_path,
+            );
             if (fileExists) {
-              const rawData = await this.gcsService.readFile(testRun.summary_path);
+              const rawData = await this.gcsService.readFile(
+                testRun.summary_path,
+              );
               rawSummary = JSON.parse(rawData);
-              summaryData = this.validateSummaryByType(testRun.sub_type, rawSummary);
+              summaryData = this.validateSummaryByType(
+                testRun.sub_type,
+                rawSummary,
+              );
             }
           } catch (e) {
             console.error(
@@ -68,9 +75,13 @@ export class TestRunService {
         // Read raw result from GCS
         if (testRun.raw_result_path) {
           try {
-            const fileExists = await this.gcsService.fileExists(testRun.raw_result_path);
+            const fileExists = await this.gcsService.fileExists(
+              testRun.raw_result_path,
+            );
             if (fileExists) {
-              const rawData = await this.gcsService.readFile(testRun.raw_result_path);
+              const rawData = await this.gcsService.readFile(
+                testRun.raw_result_path,
+              );
               rawResult = JSON.parse(rawData);
             }
           } catch (e) {
@@ -104,8 +115,8 @@ export class TestRunService {
           ? valB > valA
             ? 'increase'
             : valB < valA
-            ? 'decrease'
-            : 'same'
+              ? 'decrease'
+              : 'same'
           : 'unknown',
     };
   }
@@ -210,7 +221,7 @@ export class TestRunService {
 
       case 'postman':
         return {
-          collection_name: data.collection_name || "Unknown Collection",
+          collection_name: data.collection_name || 'Unknown Collection',
           duration_ms: data.duration_ms ?? 0,
           total_requests: data.total_requests ?? 0,
           passes: data.passes ?? 0,
@@ -277,15 +288,20 @@ export class TestRunService {
 
     let rawSummaryData = null;
     let processedSummaryData = {};
-    
+
     // Read summary from GCS
     if (testRun.summary_path) {
       try {
-        const fileExists = await this.gcsService.fileExists(testRun.summary_path);
+        const fileExists = await this.gcsService.fileExists(
+          testRun.summary_path,
+        );
         if (fileExists) {
           const rawData = await this.gcsService.readFile(testRun.summary_path);
           rawSummaryData = JSON.parse(rawData);
-          processedSummaryData = this.validateSummaryByType(testRun.sub_type, rawSummaryData);
+          processedSummaryData = this.validateSummaryByType(
+            testRun.sub_type,
+            rawSummaryData,
+          );
         }
       } catch (err) {
         console.error(`Error reading summary file for test run ${id}:`, err);
@@ -296,9 +312,13 @@ export class TestRunService {
     // Read raw result from GCS
     if (testRun.raw_result_path) {
       try {
-        const fileExists = await this.gcsService.fileExists(testRun.raw_result_path);
+        const fileExists = await this.gcsService.fileExists(
+          testRun.raw_result_path,
+        );
         if (fileExists) {
-          const rawData = await this.gcsService.readFile(testRun.raw_result_path);
+          const rawData = await this.gcsService.readFile(
+            testRun.raw_result_path,
+          );
           rawResultData = JSON.parse(rawData);
         }
       } catch (err) {
@@ -324,8 +344,8 @@ export class TestRunService {
 
     return {
       testRun,
-      summary: processedSummaryData,     
-      rawSummary: rawSummaryData || {},  
+      summary: processedSummaryData,
+      rawSummary: rawSummaryData || {},
       details: detailsData,
       rawResult: rawResultData || {},
     };
@@ -476,7 +496,9 @@ export class TestRunService {
     const testRun = await this.testRunRepo.findOne({ where: { id } });
     if (!testRun?.raw_result_path) return null;
 
-    const fileExists = await this.gcsService.fileExists(testRun.raw_result_path);
+    const fileExists = await this.gcsService.fileExists(
+      testRun.raw_result_path,
+    );
     return fileExists ? testRun.raw_result_path : null;
   }
 
@@ -492,7 +514,9 @@ export class TestRunService {
     const testRun = await this.testRunRepo.findOne({ where: { id } });
     if (!testRun?.input_file_path) return null;
 
-    const fileExists = await this.gcsService.fileExists(testRun.input_file_path);
+    const fileExists = await this.gcsService.fileExists(
+      testRun.input_file_path,
+    );
     return fileExists ? testRun.input_file_path : null;
   }
 
@@ -500,7 +524,9 @@ export class TestRunService {
     const testRun = await this.testRunRepo.findOne({ where: { id } });
     if (!testRun?.time_series_path) return null;
 
-    const fileExists = await this.gcsService.fileExists(testRun.time_series_path);
+    const fileExists = await this.gcsService.fileExists(
+      testRun.time_series_path,
+    );
     return fileExists ? testRun.time_series_path : null;
   }
 
@@ -528,8 +554,8 @@ export class TestRunService {
       // Ngược lại coi như JSON Lines (K6)
       return raw
         .split('\n')
-        .filter(line => line.trim().length > 0)
-        .map(line => {
+        .filter((line) => line.trim().length > 0)
+        .map((line) => {
           try {
             return JSON.parse(line);
           } catch (err) {
@@ -537,14 +563,13 @@ export class TestRunService {
             return null;
           }
         })
-        .filter(line => line !== null);
-
+        .filter((line) => line !== null);
     } catch (err) {
       console.error(`Error reading time series file ${gcsPath}:`, err);
       return [];
     }
   }
-  
+
   // Lấy danh sách test run theo lịch
   async getTestRunsBySchedule(scheduleId: number) {
     const testRuns = await this.testRunRepo.find({
@@ -557,9 +582,13 @@ export class TestRunService {
         let summaryData = {};
         if (testRun.summary_path) {
           try {
-            const fileExists = await this.gcsService.fileExists(testRun.summary_path);
+            const fileExists = await this.gcsService.fileExists(
+              testRun.summary_path,
+            );
             if (fileExists) {
-              const rawData = await this.gcsService.readFile(testRun.summary_path);
+              const rawData = await this.gcsService.readFile(
+                testRun.summary_path,
+              );
               summaryData = JSON.parse(rawData);
             }
           } catch (e) {

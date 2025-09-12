@@ -20,7 +20,7 @@ async function bootstrap() {
       // Allow your production domains
       const allowedDomains = [
         'https://automated-api-performance-testing-system-rn51.onrender.com',
-        // Thêm các domain khác nếu cần
+        
       ];
 
       if (allowedDomains.includes(origin)) {

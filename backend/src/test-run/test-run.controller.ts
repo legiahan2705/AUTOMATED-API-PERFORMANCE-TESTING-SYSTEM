@@ -48,13 +48,13 @@ export class TestRunController {
     try {
       const fileBuffer = await this.gcsService.downloadFile(filePath);
       const fileName = filePath.split('/').pop() || 'raw_result.json';
-      
+
       res.set({
         'Content-Type': 'application/json',
         'Content-Disposition': `attachment; filename="${fileName}"`,
         'Content-Length': fileBuffer.length.toString(),
       });
-      
+
       return res.send(fileBuffer);
     } catch (error) {
       console.error(`Error downloading raw result ${id}:`, error);
@@ -86,13 +86,13 @@ export class TestRunController {
     try {
       const fileBuffer = await this.gcsService.downloadFile(filePath);
       const fileName = filePath.split('/').pop() || 'summary.json';
-      
+
       res.set({
         'Content-Type': 'application/json',
         'Content-Disposition': `attachment; filename="${fileName}"`,
         'Content-Length': fileBuffer.length.toString(),
       });
-      
+
       return res.send(fileBuffer);
     } catch (error) {
       console.error(`Lỗi khi tải summary của test run ${id}:`, error);
@@ -109,18 +109,18 @@ export class TestRunController {
     try {
       const fileBuffer = await this.gcsService.downloadFile(filePath);
       const fileName = filePath.split('/').pop() || 'input_file';
-      
+
       // Determine content type based on file extension
-      const contentType = fileName.endsWith('.js') 
-        ? 'application/javascript' 
+      const contentType = fileName.endsWith('.js')
+        ? 'application/javascript'
         : 'application/json';
-      
+
       res.set({
         'Content-Type': contentType,
         'Content-Disposition': `attachment; filename="${fileName}"`,
         'Content-Length': fileBuffer.length.toString(),
       });
-      
+
       return res.send(fileBuffer);
     } catch (error) {
       console.error(`Lỗi khi tải input file của test run ${id}:`, error);
@@ -157,7 +157,10 @@ export class TestRunController {
           const jsonArray = JSON.parse(raw);
           return res.json(Array.isArray(jsonArray) ? jsonArray : [jsonArray]);
         } catch (err) {
-          console.error(`Invalid JSON array in time-series file ${filePath}:`, err);
+          console.error(
+            `Invalid JSON array in time-series file ${filePath}:`,
+            err,
+          );
           return res.status(200).json([]);
         }
       } else {

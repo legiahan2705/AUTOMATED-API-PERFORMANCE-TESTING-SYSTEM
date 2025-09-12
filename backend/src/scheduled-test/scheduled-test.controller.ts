@@ -1,7 +1,17 @@
-import { 
-  Controller, Get, Post, Body, Param, Delete, Put, UseGuards, Req, UploadedFile, UseInterceptors 
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Param,
+  Delete,
+  Put,
+  UseGuards,
+  Req,
+  UploadedFile,
+  UseInterceptors,
 } from '@nestjs/common';
-import { JwtAuthGuard } from 'src/auth/jwt-auth.guard'; 
+import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
 import { CreateScheduledTestDto } from './dto/create-scheduled-test.dto';
 import { UpdateScheduledTestDto } from './dto/update-scheduled-test.dto';
 import { ScheduledTestsService } from './scheduled-test.service';
@@ -28,8 +38,10 @@ export class ScheduledTestsController {
   }
 
   @Get()
-  findAll() {
-    return this.scheduledTestsService.findAll();
+  @UseGuards(JwtAuthGuard) //  Thêm auth guard
+  findAll(@Req() req: any) {
+    const userId = req.user.userId;
+    return this.scheduledTestsService.findAll(userId); //  Truyền userId
   }
 
   @Get(':id')
@@ -46,7 +58,6 @@ export class ScheduledTestsController {
   ) {
     return this.scheduledTestsService.update(id, dto, file);
   }
-
 
   @Delete(':id')
   remove(@Param('id') id: number) {
