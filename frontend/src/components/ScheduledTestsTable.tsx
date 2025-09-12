@@ -50,6 +50,7 @@ import {
   Activity,
 } from "lucide-react";
 import { IconCalendarClock } from "@tabler/icons-react";
+import axiosInstance from "@/lib/axiosInstance";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "https://automated-api-performance-testing-system-rn51.onrender.com";
 
@@ -74,6 +75,17 @@ export interface ScheduledTest {
 }
 
 const toBool = (v: boolean | number) => !!Number(v);
+
+// Helper function to get auth headers
+const getAuthHeaders = () => {
+  const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+  return token ? { Authorization: `Bearer ${token}` } : {};
+};
+
+// Helper function to get auth config for axios
+const getAuthConfig = () => ({
+  headers: getAuthHeaders()
+});
 
 function parseCronExpression(cronExpr: string) {
   const parts = cronExpr.trim().split(/\s+/);
@@ -190,11 +202,18 @@ export default function ScheduledTestsTable() {
     setErr(null);
     try {
       const res = await axios.get<ScheduledTest[]>(
-        `${API_BASE}/scheduled-tests`
+        `${API_BASE}/scheduled-tests`,
+        getAuthConfig() // Add auth config here
       );
       setData(res.data || []);
     } catch (e: any) {
-      setErr(e?.message || "Failed to fetch scheduled tests");
+      // Handle specific auth errors
+      if (e?.response?.status === 401) {
+        setErr("Authentication required. Please log in again.");
+        // Optionally redirect to login or show login modal
+      } else {
+        setErr(e?.message || "Failed to fetch scheduled tests");
+      }
       console.error("Fetch schedules error:", e);
     } finally {
       setLoading(false);
@@ -231,23 +250,36 @@ export default function ScheduledTestsTable() {
   const toggleActive = async (item: ScheduledTest) => {
     const newActive = !toBool(item.isActive);
     try {
-      await axios.put(`${API_BASE}/scheduled-tests/${item.id}`, {
-        isActive: newActive,
-      });
+      await axios.put(
+        `${API_BASE}/scheduled-tests/${item.id}`,
+        { isActive: newActive },
+        getAuthConfig() // Add auth config here
+      );
       await fetchSchedules();
-    } catch (e) {
+    } catch (e: any) {
       console.error("Toggle active failed", e);
-      alert("Failed to toggle schedule status");
+      if (e?.response?.status === 401) {
+        alert("Authentication required. Please log in again.");
+      } else {
+        alert("Failed to toggle schedule status");
+      }
     }
   };
 
   const deleteSchedule = async (id: number) => {
     try {
-      await axios.delete(`${API_BASE}/scheduled-tests/${id}`);
+      await axios.delete(
+        `${API_BASE}/scheduled-tests/${id}`,
+        getAuthConfig() // Add auth config here
+      );
       await fetchSchedules();
-    } catch (e) {
+    } catch (e: any) {
       console.error("Delete failed", e);
-      alert("Failed to delete schedule");
+      if (e?.response?.status === 401) {
+        alert("Authentication required. Please log in again.");
+      } else {
+        alert("Failed to delete schedule");
+      }
     }
   };
 
@@ -255,17 +287,21 @@ export default function ScheduledTestsTable() {
     try {
       let url = "";
       if (item.subType === "postman") {
-        url = `${API_BASE}/test-run/postman/${item.projectId}`;
+        url = `/test-run/postman/${item.projectId}`;
       } else if (item.subType === "quick") {
-        url = `${API_BASE}/test-run/performance/quick/${item.projectId}`;
+        url = `/test-run/performance/quick/${item.projectId}`;
       } else if (item.subType === "script") {
-        url = `${API_BASE}/test-run/performance/k6/${item.projectId}`;
+        url = `/test-run/performance/k6/${item.projectId}`;
       }
-      await axios.post(url);
+      await axiosInstance.post(url);
       alert("Test execution request sent successfully");
-    } catch (e) {
+    } catch (e: any) {
       console.error("Run now failed", e);
-      alert("Failed to execute test");
+      if (e?.response?.status === 401) {
+        alert("Authentication required. Please log in again.");
+      } else {
+        alert("Failed to execute test");
+      }
     }
   };
 
@@ -396,6 +432,9 @@ export default function ScheduledTestsTable() {
                       </TableHead>
                       <TableHead className="font-semibold text-[18px] text-[#658ec7]">
                         Last Run
+                      </TableHead>
+                      <TableHead className="font-semibold text-[18px] text-[#658ec7]">
+                        Actions
                       </TableHead>
                     </TableRow>
                   </TableHeader>
