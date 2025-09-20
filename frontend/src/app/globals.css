@@ -190,3 +190,26 @@ div[role="status"].react-hot-toast,
 .select-arrow svg {
   color: #fff !important;
 }
+
+/* Hiệu ứng nhấp nháy nhẹ */
+@keyframes pulse {
+  0%,100% { opacity: 0.08; }
+  50%     { opacity: 0.15; }
+}
+
+/* Watermark tự đổi màu theo nền (sáng/tối) */
+body::before {
+  content: "LeGiaHan";                 /* chữ watermark */
+  position: fixed;
+  bottom: 20px;                        /* góc phải dưới */
+  right: 20px;
+  font-family: 'Lora', serif;          /* font-lora */
+  font-size: 4rem;
+  color: rgba(255, 255, 255, 0.144);        /* 1 màu trắng nhạt */
+  mix-blend-mode: difference;           /* nền sáng -> chữ tối, nền tối -> chữ sáng */
+  animation: pulse 4s infinite;        
+  pointer-events: none;                 /* không cản click */
+  z-index: 9999;
+}
+
+
