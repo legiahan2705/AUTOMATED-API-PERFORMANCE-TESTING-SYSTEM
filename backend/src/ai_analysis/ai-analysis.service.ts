@@ -441,8 +441,8 @@ Recommendations: ${heuristics.recommendations.join(' | ')}
     const raw = this.formatRawBlock(result);
 
     const footer = language === 'vi'
-      ? `🎯 QUAN TRỌNG: Chỉ sử dụng số liệu có sẵn trong RAW DATA. Không đoán p95/p99 nếu không có. Đưa ra con số cụ thể và so sánh với industry standard.`
-      : `🎯 CRITICAL: Only use metrics available in RAW DATA. Don't guess p95/p99 if not provided. Give specific numbers and compare with industry standards.`;
+      ? `QUAN TRỌNG: Chỉ sử dụng số liệu có sẵn trong RAW DATA. Không đoán p95/p99 nếu không có. Đưa ra con số cụ thể và so sánh với industry standard.`
+      : `CRITICAL: Only use metrics available in RAW DATA. Don't guess p95/p99 if not provided. Give specific numbers and compare with industry standards.`;
 
     return `${langHeader}
 

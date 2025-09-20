@@ -105,7 +105,7 @@ const TestDetailDialog: React.FC<TestDetailDialogProps> = ({
         setGptContent(`Lỗi: ${err.response.data.error}`);
       } else if (err.response?.status === 500) {
         setGptContent(
-          "Lỗi server khi thực hiện phân tích AI. Vui lòng kiểm tra:\n- Ollama đã được cài đặt và chạy\n- Model mistral đã được tải về\n- File raw result tồn tại và có định dạng đúng"
+          "Lỗi server khi thực hiện phân tích AI."
         );
       } else {
         setGptContent(
