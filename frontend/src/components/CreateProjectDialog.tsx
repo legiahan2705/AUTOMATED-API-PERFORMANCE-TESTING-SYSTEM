@@ -38,7 +38,7 @@ interface CreateProjectDialogProps {
 // Watermark Component
 const WatermarkOverlay = () => {
   return (
-    <div className="fixed inset-0 pointer-events-none z-40 overflow-hidden">
+    <div className="fixed inset-0 pointer-events-none overflow-hidden">
       <div className="absolute inset-0 opacity-[0.05] select-none">
         {/* Tạo pattern watermark lặp lại */}
         <div 
