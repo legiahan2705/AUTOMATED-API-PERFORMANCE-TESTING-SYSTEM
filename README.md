@@ -98,9 +98,9 @@ Beautiful interactive charts and graphs powered by Chart.js make it easy to unde
 
 ## 📖 Comprehensive Usage Guide
 
-Email: jmlegiahan@gmail.com
-Password: 123
-THIS ACCOUNT IS FOR VIEWING 
+**ACCOUNT FOR VIEWING**
+- Email: jmlegiahan@gmail.com
+- Password: 123
 
 ### 1. 📁 Postman Collection Testing
 
@@ -455,6 +455,7 @@ export default function () {
   <p><em>Last updated: September 2025</em></p>
   
 </div>
+
 
 
 
